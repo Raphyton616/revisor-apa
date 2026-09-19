@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RevisorAPA — Revisión académica APA 7</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-inner">
+        <div class="medieval-kicker">Pergamino académico</div>
+        <h1 class="sidebar-title">RevisorAPA</h1>
+        <p class="sidebar-desc">
+          Revisa tu documento según las normas de la <strong>APA 7.ª edición</strong>.
+          Carga un archivo <code>.docx</code> y obtén un informe detallado.
+        </p>
+
+        <div class="upload-zone" id="uploadZone">
+          <div class="upload-icon">📜</div>
+          <div class="upload-text">Arrastra aquí tu archivo .docx<br>o haz clic para seleccionarlo</div>
+          <div class="upload-hint">Solo se aceptan archivos .docx</div>
+          <input type="file" id="fileInput" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden />
+        </div>
+
+        <div class="file-info" id="fileInfo" style="display: none;">
+          <span class="file-name" id="fileName"></span>
+          <button type="button" class="btn-clear" id="btnClear" title="Quitar archivo">✕</button>
+        </div>
+
+        <div class="sidebar-actions">
+          <button type="button" class="btn btn-gold" id="btnAnalyze" disabled>
+            Analizar documento
+          </button>
+          <button type="button" class="btn btn-outline" id="btnCorrect" disabled>
+            Descargar corregido
+          </button>
+        </div>
+
+        <hr class="sidebar-rule" />
+
+        <div class="sidebar-info">
+          <strong>¿Qué revisa?</strong>
+          <p>
+            Márgenes, tipografía, interlineado, sangrías, numeración de páginas,
+            sección de referencias, citas y correspondencia citas ↔ referencias.
+          </p>
+          <p class="caption">El documento corregido aplica formato APA 7 de forma automática.</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main">
+      <header class="main-header">
+        <div class="medieval-kicker">Informe de revisión</div>
+        <h2 class="main-title">RevisorAPA</h2>
+        <p class="main-subtitle">Criterios de la American Psychological Association, 7.ª edición</p>
+        <div class="medieval-rule"><span>⚔</span></div>
+      </header>
+
+      <!-- Empty state -->
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">📜</div>
+        <p>Carga un documento <strong>.docx</strong> para comenzar la revisión.</p>
+      </div>
+
+      <!-- Loading -->
+      <div class="loading" id="loading" style="display: none;">
+        <div class="spinner"></div>
+        <p>Analizando el pergamino…</p>
+      </div>
+
+      <!-- Results -->
+      <div id="results" style="display: none;">
+        <div class="metrics" id="metrics"></div>
+        <div class="alert" id="summaryAlert"></div>
+        <div id="checksContainer"></div>
+        <div class="detail-section" id="detailSection" style="display: none;">
+          <h3>Detalle de citas y referencias</h3>
+          <div id="detailContent"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+          </html>
