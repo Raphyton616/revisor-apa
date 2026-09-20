@@ -18,12 +18,15 @@
   let selectedFile = null;
 
   function isAllowedFile(file) {
+    if (!file) return false;
     const name = (file.name || "").toLowerCase();
     return name.endsWith(".docx") || name.endsWith(".pdf");
   }
 
-  // --- Upload handling ---
-  uploadZone.addEventListener("click", () => fileInput.click());
+  // --- Manejo de la subida de archivos ---
+  
+  // NOTA: Se eliminó el listener 'click' en uploadZone para evitar el doble disparo en móviles,
+  // ya que la etiqueta <label for="fileInput"> gestiona el clic de forma nativa.
 
   uploadZone.addEventListener("dragover", (e) => {
     e.preventDefault();
@@ -37,12 +40,16 @@
   uploadZone.addEventListener("drop", (e) => {
     e.preventDefault();
     uploadZone.classList.remove("dragover");
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
+    if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+      handleFile(e.dataTransfer.files[0]);
+    }
   });
 
-  fileInput.addEventListener("change", () => {
-    if (fileInput.files[0]) handleFile(fileInput.files[0]);
+  // Escucha cambios en el input (compatible con iOS y Android)
+  fileInput.addEventListener("change", (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      handleFile(e.target.files[0]);
+    }
   });
 
   btnClear.addEventListener("click", clearFile);
@@ -50,6 +57,7 @@
   function handleFile(file) {
     if (!isAllowedFile(file)) {
       alert("Solo se aceptan archivos .docx o .pdf");
+      clearFile();
       return;
     }
     selectedFile = file;
@@ -63,7 +71,7 @@
 
   function clearFile() {
     selectedFile = null;
-    fileInput.value = "";
+    fileInput.value = ""; // Limpia el valor para poder seleccionar el mismo archivo si es necesario
     fileInfo.style.display = "none";
     btnAnalyze.disabled = true;
     btnCorrect.disabled = true;
@@ -71,7 +79,7 @@
     results.style.display = "none";
   }
 
-  // --- Analyze ---
+  // --- Análisis del documento ---
   btnAnalyze.addEventListener("click", async () => {
     if (!selectedFile) return;
 
@@ -107,7 +115,7 @@
     }
   });
 
-  // --- Correct / Download ---
+  // --- Corrección / Descarga ---
   btnCorrect.addEventListener("click", async () => {
     if (!selectedFile) return;
 
@@ -146,7 +154,7 @@
     }
   });
 
-  // --- Render results ---
+  // --- Renderizado de resultados ---
   function renderResults(data) {
     results.style.display = "block";
 
@@ -207,7 +215,7 @@
           <div>
             <div class="check-title">${check.title}</div>
             <div class="check-detail">${check.detail || ""}</div>
-            \( {check.recommendation ? `<div class="check-recommendation"> \){check.recommendation}</div>` : ""}
+            ${check.recommendation ? `<div class="check-recommendation">${check.recommendation}</div>` : ""}
           </div>
         `;
         section.appendChild(card);
@@ -229,7 +237,7 @@
       if (data.citations && data.citations.length) {
         html += `<div class="detail-block"><h4>Citas detectadas (${data.citations.length})</h4><ul>`;
         data.citations.forEach((c) => {
-          html += `<li>\( {c.texto} <em>( \){c.tipo})</em></li>`;
+          html += `<li>${c.texto} <em>(${c.tipo})</em></li>`;
         });
         html += `</ul></div>`;
       }
