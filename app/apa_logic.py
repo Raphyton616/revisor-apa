@@ -85,10 +85,17 @@ def has_page_field(document: Document) -> bool:
     return False
 
 
+def is_reference_heading(text: str) -> bool:
+    """Detecta el título de referencias de forma flexible e inmune a números de página pegados."""
+    text_clean = text.strip()
+    text_clean = re.sub(r"^\d+\s+|\s+\d+$", "", text_clean)
+    return bool(re.search(r"^\s*(referencias|references|bibliografía|bibliografia)\b", text_clean, re.I))
+
+
 def find_reference_start(paragraphs: list) -> int | None:
     for index, paragraph in enumerate(paragraphs):
         text = paragraph.text.strip() if hasattr(paragraph, "text") else str(paragraph).strip()
-        if re.fullmatch(r"(referencias|references)", text, re.I):
+        if is_reference_heading(text):
             return index
     return None
 
@@ -194,8 +201,7 @@ def extract_text_from_pdf(data: bytes) -> str:
             page_text = page.extract_text() or ""
             if page_text.strip():
                 texts.append(page_text)
-    return "\n\n".join(texts)
-
+    return "\n\n".join(texts) 
 
 def text_to_paragraphs(text: str) -> list[str]:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
@@ -206,11 +212,25 @@ def text_to_paragraphs(text: str) -> list[str]:
         if not block:
             continue
         lines = [ln.strip() for ln in block.split("\n") if ln.strip()]
+        
+        # Filtra números de página solos generados por la extracción del PDF
+        lines = [ln for ln in lines if not re.match(r"^\d+$", ln)]
+        
+        if not lines:
+            continue
+            
         if len(lines) <= 1:
-            paragraphs.append(block)
+            paragraphs.append(lines[0])
         else:
             current = lines[0]
             for ln in lines[1:]:
+                # Si una línea es el encabezado de referencias, la separa inmediatamente
+                if is_reference_heading(ln):
+                    if current:
+                        paragraphs.append(current)
+                    current = ln
+                    continue
+
                 if current.endswith((".", "?", "!", ":", ";")) or len(current) > 80:
                     paragraphs.append(current)
                     current = ln
@@ -220,11 +240,12 @@ def text_to_paragraphs(text: str) -> list[str]:
                 paragraphs.append(current)
     return paragraphs
 
+
 def analyze_from_text(paragraphs: list[str], is_pdf: bool = False) -> dict:
     text = "\n".join(paragraphs)
     reference_start = None
     for i, p in enumerate(paragraphs):
-        if re.fullmatch(r"(referencias|references)", p.strip(), re.I):
+        if is_reference_heading(p):
             reference_start = i
             break
 
@@ -513,10 +534,10 @@ def build_apa_docx_from_text(paragraphs: list[str]) -> bytes:
         if not text:
             continue
 
-        if re.fullmatch(r"(referencias|references)", text, re.I):
+        if is_reference_heading(text):
             reference_mode = True
             p = document.add_paragraph()
-            run = p.add_run(text)
+            run = p.add_run("Referencias")
             set_run_font(run)
             p.paragraph_format.line_spacing = 2
             p.paragraph_format.first_line_indent = Inches(0)
