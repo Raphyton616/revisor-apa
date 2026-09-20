@@ -25,7 +25,14 @@
           <div class="upload-icon">📜</div>
           <div class="upload-text">Arrastra aquí tu archivo<br>o haz clic para seleccionarlo</div>
           <div class="upload-hint">Se aceptan .docx y .pdf</div>
-          <input type="file" id="fileInput" accept=".docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden />
+          
+          <!-- Se eliminó 'hidden' y se usó un estilo de ocultamiento invisible compatible con teléfonos -->
+          <input 
+            type="file" 
+            id="fileInput" 
+            accept=".docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword" 
+            style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0;"
+          />
         </label>
 
         <div class="file-info" id="fileInfo" style="display: none;">
@@ -91,4 +98,4 @@
 
   <script src="/static/app.js"></script>
 </body>
-          </html>
+</html>
