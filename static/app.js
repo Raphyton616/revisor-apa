@@ -17,6 +17,11 @@
 
   let selectedFile = null;
 
+  function isAllowedFile(file) {
+    const name = (file.name || "").toLowerCase();
+    return name.endsWith(".docx") || name.endsWith(".pdf");
+  }
+
   // --- Upload handling ---
   uploadZone.addEventListener("click", () => fileInput.click());
 
@@ -43,8 +48,8 @@
   btnClear.addEventListener("click", clearFile);
 
   function handleFile(file) {
-    if (!file.name.toLowerCase().endsWith(".docx")) {
-      alert("Solo se aceptan archivos .docx");
+    if (!isAllowedFile(file)) {
+      alert("Solo se aceptan archivos .docx o .pdf");
       return;
     }
     selectedFile = file;
@@ -127,7 +132,8 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = selectedFile.name.replace(/\.docx$/i, "") + "_APA7_corregido.docx";
+      const baseName = selectedFile.name.replace(/\.(docx|pdf)$/i, "");
+      a.download = baseName + "_APA7_corregido.docx";
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -144,7 +150,6 @@
   function renderResults(data) {
     results.style.display = "block";
 
-    // Metrics
     metrics.innerHTML = `
       <div class="metric">
         <span class="metric-label">Párrafos</span>
@@ -164,7 +169,6 @@
       </div>
     `;
 
-    // Summary alert
     const ok = data.ok_count ?? 0;
     const issues = data.issue_count ?? 0;
     if (issues === 0) {
@@ -175,7 +179,6 @@
       summaryAlert.textContent = `Se revisaron ${ok + issues} criterios: ${ok} correctos y ${issues} con observaciones.`;
     }
 
-    // Group checks by category
     const categories = {};
     (data.checks || []).forEach((check) => {
       if (!categories[check.category]) categories[check.category] = [];
@@ -213,7 +216,6 @@
       checksContainer.appendChild(section);
     });
 
-    // Detail section (citations & references)
     const hasDetails =
       (data.citations && data.citations.length) ||
       (data.references && data.references.length) ||
