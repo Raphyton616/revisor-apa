@@ -20,11 +20,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 app = FastAPI(
     title="RevisorAPA",
     description="Revisión académica con criterios de APA 7.ª edición",
-    version="1.0.0",
+    version="1.1.0",
 )
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
+
+
+def _is_allowed(filename: str) -> bool:
+    name = (filename or "").lower()
+    return name.endswith(".docx") or name.endswith(".pdf")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -37,17 +42,17 @@ async def home(request: Request):
 
 @app.post("/api/analyze")
 async def analyze(file: UploadFile = File(...)):
-    if not file.filename or not file.filename.lower().endswith(".docx"):
+    if not _is_allowed(file.filename or ""):
         raise HTTPException(
             status_code=400,
-            detail="Solo se aceptan archivos .docx",
+            detail="Solo se aceptan archivos .docx o .pdf",
         )
 
     try:
         data = await file.read()
         if not data:
             raise HTTPException(status_code=400, detail="El archivo está vacío")
-        result = analyze_document(data)
+        result = analyze_document(data, filename=file.filename or "")
         result["filename"] = file.filename
         return result
     except Exception as exc:
@@ -59,19 +64,19 @@ async def analyze(file: UploadFile = File(...)):
 
 @app.post("/api/correct")
 async def correct(file: UploadFile = File(...)):
-    if not file.filename or not file.filename.lower().endswith(".docx"):
+    if not _is_allowed(file.filename or ""):
         raise HTTPException(
             status_code=400,
-            detail="Solo se aceptan archivos .docx",
+            detail="Solo se aceptan archivos .docx o .pdf",
         )
 
     try:
         data = await file.read()
         if not data:
             raise HTTPException(status_code=400, detail="El archivo está vacío")
-        corrected = correct_document(data)
+        corrected = correct_document(data, filename=file.filename or "")
 
-        base_name = re.sub(r"\.docx$", "", file.filename, flags=re.I)
+        base_name = re.sub(r"\.(docx|pdf)$", "", file.filename or "documento", flags=re.I)
         filename = f"{base_name}_APA7_corregido.docx"
 
         return StreamingResponse(
