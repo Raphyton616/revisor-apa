@@ -201,7 +201,7 @@ def extract_text_from_pdf(data: bytes) -> str:
             page_text = page.extract_text() or ""
             if page_text.strip():
                 texts.append(page_text)
-    return "\n\n".join(texts) 
+    return "\n\n".join(texts)
 
 def text_to_paragraphs(text: str) -> list[str]:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
@@ -255,20 +255,45 @@ def analyze_from_text(paragraphs: list[str], is_pdf: bool = False) -> dict:
     checks: list[Check] = []
 
     if is_pdf:
+        # --- BLOQUE FORMATO GENERAL EN PDF ---
         checks.append(
             Check(
-                "Formato", "Origen del documento",
-                "ok",
-                "El archivo es un PDF. Se analizó el texto extraído.",
-                "El documento corregido se entregará como .docx con formato APA aplicado.",
+                "Formato", "Márgenes de una pulgada",
+                "warning",
+                "No se pueden medir márgenes en un PDF.",
+                "Se aplicarán márgenes de 2,54 cm (1 pulgada) en los 4 lados al generar el .docx.",
             )
         )
         checks.append(
             Check(
-                "Formato", "Márgenes, tipografía e interlineado",
+                "Formato", "Tipografía legible y consistente",
                 "warning",
-                "No se pueden verificar márgenes, tipografía ni interlineado de forma fiable en un PDF.",
-                "Al generar el documento corregido se aplicarán márgenes de 2,54 cm, Times New Roman 12 e interlineado doble.",
+                "Tipografía extraída como texto plano.",
+                "Se formateará todo el texto en Times New Roman 12 pt.",
+            )
+        )
+        checks.append(
+            Check(
+                "Formato", "Interlineado doble",
+                "warning",
+                "Interlineado no medible en extracción PDF.",
+                "Se aplicará interlineado doble (2.0) a todo el documento.",
+            )
+        )
+        checks.append(
+            Check(
+                "Formato", "Sangría de primera línea",
+                "warning",
+                "Sangría no medible en extracción PDF.",
+                "Se aplicará sangría de 1,27 cm en la primera línea de cada párrafo del cuerpo.",
+            )
+        )
+        checks.append(
+            Check(
+                "Formato", "Numeración de páginas",
+                "warning",
+                "Numeración no verificable en el encabezado de PDF.",
+                "Se añadirá numeración de página en la esquina superior derecha.",
             )
         )
 
@@ -281,6 +306,27 @@ def analyze_from_text(paragraphs: list[str], is_pdf: bool = False) -> dict:
             "Añade un encabezado «Referencias» al final del trabajo y coloca allí las fuentes citadas.",
         )
     )
+
+    reference_count = len(reference_paragraphs)
+
+    if is_pdf and reference_count > 0:
+        # --- BLOQUE FORMATO DE REFERENCIAS EN PDF (Sangría francesa e Interlineado) ---
+        checks.append(
+            Check(
+                "Referencias", "Sangría francesa en referencias",
+                "warning",
+                "La sangría francesa no se puede medir directamente en el texto del PDF.",
+                "Se aplicará automáticamente sangría francesa (1,27 cm) a la lista en el .docx corregido.",
+            )
+        )
+        checks.append(
+            Check(
+                "Referencias", "Interlineado en referencias",
+                "warning",
+                "El interlineado de la lista no es medible en PDF.",
+                "Se formateará la lista de referencias con interlineado doble (2.0).",
+            )
+        )
 
     citation_matches = extract_citations("\n".join(body_paragraphs))
     citation_count = len(citation_matches)
@@ -321,7 +367,6 @@ def analyze_from_text(paragraphs: list[str], is_pdf: bool = False) -> dict:
                 "Verifica que cada cita tenga su correspondiente entrada en la lista de referencias.",
             ))
 
-    reference_count = len(reference_paragraphs)
     checks.append(
         Check(
             "Referencias", "Entradas bibliográficas",
