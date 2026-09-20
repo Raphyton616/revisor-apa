@@ -18,14 +18,14 @@
         <h1 class="sidebar-title">RevisorAPA</h1>
         <p class="sidebar-desc">
           Revisa tu documento según las normas de la <strong>APA 7.ª edición</strong>.
-          Carga un archivo <code>.docx</code> y obtén un informe detallado.
+          Carga un archivo <code>.docx</code> o <code>.pdf</code> y obtén un informe detallado.
         </p>
 
         <label class="upload-zone" id="uploadZone" for="fileInput">
           <div class="upload-icon">📜</div>
-          <div class="upload-text">Arrastra aquí tu archivo .docx<br>o haz clic para seleccionarlo</div>
-          <div class="upload-hint">Solo se aceptan archivos .docx</div>
-          <input type="file" id="fileInput" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden />
+          <div class="upload-text">Arrastra aquí tu archivo<br>o haz clic para seleccionarlo</div>
+          <div class="upload-hint">Se aceptan .docx y .pdf</div>
+          <input type="file" id="fileInput" accept=".docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden />
         </label>
 
         <div class="file-info" id="fileInfo" style="display: none;">
@@ -50,7 +50,7 @@
             Márgenes, tipografía, interlineado, sangrías, numeración de páginas,
             sección de referencias, citas y correspondencia citas ↔ referencias.
           </p>
-          <p class="caption">El documento corregido aplica formato APA 7 de forma automática.</p>
+          <p class="caption">Si subes un PDF, el documento corregido se entrega siempre como .docx con formato APA aplicado.</p>
         </div>
       </div>
     </aside>
@@ -67,7 +67,7 @@
       <!-- Empty state -->
       <div class="empty-state" id="emptyState">
         <div class="empty-icon">📜</div>
-        <p>Carga un documento <strong>.docx</strong> para comenzar la revisión.</p>
+        <p>Carga un documento <strong>.docx</strong> o <strong>.pdf</strong> para comenzar la revisión.</p>
       </div>
 
       <!-- Loading -->
@@ -91,4 +91,4 @@
 
   <script src="/static/app.js"></script>
 </body>
-  </html>
+          </html>
