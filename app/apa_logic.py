@@ -1,6 +1,5 @@
 """
-Lógica de análisis y corrección APA 7.ª edición.
-Soporta .docx y .pdf (el corregido siempre se entrega como .docx).
+Lógica de análisis y corrección APA 7.ª edición exclusiva para archivos .docx.
 """
 
 from __future__ import annotations
@@ -15,11 +14,6 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
-
-try:
-    import pdfplumber
-except ImportError:
-    pdfplumber = None
 
 
 APA_FONTS = {
@@ -56,11 +50,11 @@ def non_empty_paragraphs(document: Document) -> list:
     return [p for p in iter_paragraphs(document) if p.text.strip()]
 
 
-def length_inches(value) -> float | None:
+def length_cm(value) -> float | None:
     if value is None:
         return None
     try:
-        return float(value.inches)
+        return round(float(value.cm), 2)
     except (AttributeError, TypeError, ValueError):
         return None
 
@@ -86,18 +80,19 @@ def has_page_field(document: Document) -> bool:
 
 
 def is_reference_heading(text: str) -> bool:
-    """Detecta el título de referencias de forma flexible e inmune a números de página pegados."""
+    """Detecta si un texto corresponde a un encabezado de referencias o variantes."""
     text_clean = text.strip()
     text_clean = re.sub(r"^\d+\s+|\s+\d+$", "", text_clean)
-    return bool(re.search(r"^\s*(referencias|references|bibliografía|bibliografia)\b", text_clean, re.I))
+    pattern = r"^\s*(referencias(\s+bibliográficas|\s+bibliograficas)?|references|bibliografía|bibliografia)\b"
+    return bool(re.search(pattern, text_clean, re.I))
 
 
-def find_reference_start(paragraphs: list) -> int | None:
+def find_reference_start(paragraphs: list) -> tuple[int | None, str]:
     for index, paragraph in enumerate(paragraphs):
         text = paragraph.text.strip() if hasattr(paragraph, "text") else str(paragraph).strip()
         if is_reference_heading(text):
-            return index
-    return None
+            return index, text
+    return None, ""
 
 
 def extract_citations(text: str) -> list[dict]:
@@ -185,154 +180,141 @@ def extract_reference_entries(reference_paragraphs: list) -> list[dict]:
         )
     return entries
 
+    def analyze_document(data: bytes, filename: str = "") -> dict:
+    if not filename.lower().endswith(".docx"):
+        raise ValueError("La aplicación está optimizada exclusivamente para archivos .docx.")
 
-def _is_pdf(data: bytes, filename: str = "") -> bool:
-    if filename.lower().endswith(".pdf"):
-        return True
-    return data[:5] == b"%PDF-"
-
-
-def extract_text_from_pdf(data: bytes) -> str:
-    if pdfplumber is None:
-        raise RuntimeError("pdfplumber no está instalado")
-    texts = []
-    with pdfplumber.open(io.BytesIO(data)) as pdf:
-        for page in pdf.pages:
-            page_text = page.extract_text() or ""
-            if page_text.strip():
-                texts.append(page_text)
-    return "\n\n".join(texts)
-
-def text_to_paragraphs(text: str) -> list[str]:
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    raw = re.split(r"\n\s*\n", text)
-    paragraphs = []
-    for block in raw:
-        block = block.strip()
-        if not block:
-            continue
-        lines = [ln.strip() for ln in block.split("\n") if ln.strip()]
-        
-        # Filtra números de página solos generados por la extracción del PDF
-        lines = [ln for ln in lines if not re.match(r"^\d+$", ln)]
-        
-        if not lines:
-            continue
-            
-        if len(lines) <= 1:
-            paragraphs.append(lines[0])
-        else:
-            current = lines[0]
-            for ln in lines[1:]:
-                # Si una línea es el encabezado de referencias, la separa inmediatamente
-                if is_reference_heading(ln):
-                    if current:
-                        paragraphs.append(current)
-                    current = ln
-                    continue
-
-                if current.endswith((".", "?", "!", ":", ";")) or len(current) > 80:
-                    paragraphs.append(current)
-                    current = ln
-                else:
-                    current = current + " " + ln
-            if current:
-                paragraphs.append(current)
-    return paragraphs
-
-
-def analyze_from_text(paragraphs: list[str], is_pdf: bool = False) -> dict:
-    text = "\n".join(paragraphs)
-    reference_start = None
-    for i, p in enumerate(paragraphs):
-        if is_reference_heading(p):
-            reference_start = i
-            break
-
+    document = Document(io.BytesIO(data))
+    paragraphs = non_empty_paragraphs(document)
+    reference_start, raw_heading_text = find_reference_start(paragraphs)
+    
     body_paragraphs = paragraphs[:reference_start] if reference_start is not None else paragraphs
     reference_paragraphs = paragraphs[reference_start + 1:] if reference_start is not None else []
 
     checks: list[Check] = []
 
-    if is_pdf:
-        # --- BLOQUE FORMATO GENERAL EN PDF ---
-        checks.append(
-            Check(
-                "Formato", "Márgenes de una pulgada",
-                "warning",
-                "No se pueden medir márgenes en un PDF.",
-                "Se aplicarán márgenes de 2,54 cm (1 pulgada) en los 4 lados al generar el .docx.",
-            )
-        )
-        checks.append(
-            Check(
-                "Formato", "Tipografía legible y consistente",
-                "warning",
-                "Tipografía extraída como texto plano.",
-                "Se formateará todo el texto en Times New Roman 12 pt.",
-            )
-        )
-        checks.append(
-            Check(
-                "Formato", "Interlineado doble",
-                "warning",
-                "Interlineado no medible en extracción PDF.",
-                "Se aplicará interlineado doble (2.0) a todo el documento.",
-            )
-        )
-        checks.append(
-            Check(
-                "Formato", "Sangría de primera línea",
-                "warning",
-                "Sangría no medible en extracción PDF.",
-                "Se aplicará sangría de 1,27 cm en la primera línea de cada párrafo del cuerpo.",
-            )
-        )
-        checks.append(
-            Check(
-                "Formato", "Numeración de páginas",
-                "warning",
-                "Numeración no verificable en el encabezado de PDF.",
-                "Se añadirá numeración de página en la esquina superior derecha.",
-            )
-        )
+    # --- 1. VERIFICACIÓN DE MÁRGENES ESPECÍFICOS ---
+    section = document.sections[0] if document.sections else None
+    if section:
+        top_cm = length_cm(getattr(section, "top_margin", None))
+        bottom_cm = length_cm(getattr(section, "bottom_margin", None))
+        left_cm = length_cm(getattr(section, "left_margin", None))
+        right_cm = length_cm(getattr(section, "right_margin", None))
 
-    references_heading_ok = reference_start is not None
+        margin_errors = []
+        if top_cm is None or abs(top_cm - 2.54) > 0.1:
+            margin_errors.append(f"Superior ({top_cm} cm)" if top_cm else "Superior (no definido)")
+        if bottom_cm is None or abs(bottom_cm - 2.54) > 0.1:
+            margin_errors.append(f"Inferior ({bottom_cm} cm)" if bottom_cm else "Inferior (no definido)")
+        if left_cm is None or abs(left_cm - 2.54) > 0.1:
+            margin_errors.append(f"Izquierdo ({left_cm} cm)" if left_cm else "Izquierdo (no definido)")
+        if right_cm is None or abs(right_cm - 2.54) > 0.1:
+            margin_errors.append(f"Derecho ({right_cm} cm)" if right_cm else "Derecho (no definido)")
+
+        if not margin_errors:
+            checks.append(Check(
+                "Formato", "Márgenes de 2,54 cm", "ok",
+                "Los cuatro márgenes (Superior, Inferior, Izquierdo y Derecho) están configurados correctamente a 2,54 cm (1 pulgada).", ""
+            ))
+        else:
+            checks.append(Check(
+                "Formato", "Márgenes de 2,54 cm", "error",
+                f"Se encontraron márgenes incorrectos en: {', '.join(margin_errors)}.",
+                "Ajusta los márgenes a 2,54 cm en la pestaña Disposición > Márgenes de Word."
+            ))
+
+    # --- 2. TIPOGRAFÍA ---
+    font_samples = paragraph_font_samples(paragraphs)
+    font_ok = not font_samples or all(s in APA_FONTS for s in font_samples)
+    font_label = ", ".join(f"{name} {size:g}" for name, size in sorted(set(font_samples))[:4])
     checks.append(
         Check(
-            "Referencias", "Sección de referencias",
-            "ok" if references_heading_ok else "error",
-            "Se encontró la sección «Referencias»." if references_heading_ok else "No se encontró un encabezado exacto «Referencias».",
-            "Añade un encabezado «Referencias» al final del trabajo y coloca allí las fuentes citadas.",
+            "Formato", "Tipografía legible y consistente",
+            "ok" if font_ok else "warning",
+            f"Se detectó: {font_label or 'tipografía heredada'}." if font_ok else "Hay tipografías que no coinciden con las opciones estándar de APA 7.",
+            "Usa Times New Roman 12 pt, Arial 11 pt, Calibri 11 pt o Georgia 11 pt.",
         )
     )
 
-    reference_count = len(reference_paragraphs)
-
-    if is_pdf and reference_count > 0:
-        # --- BLOQUE FORMATO DE REFERENCIAS EN PDF (Sangría francesa e Interlineado) ---
-        checks.append(
-            Check(
-                "Referencias", "Sangría francesa en referencias",
-                "warning",
-                "La sangría francesa no se puede medir directamente en el texto del PDF.",
-                "Se aplicará automáticamente sangría francesa (1,27 cm) a la lista en el .docx corregido.",
-            )
+    # --- 3. INTERLINEADO ---
+    spacing_values = []
+    for paragraph in body_paragraphs:
+        value = paragraph.paragraph_format.line_spacing
+        if isinstance(value, (int, float)):
+            spacing_values.append(float(value))
+    spacing_ok = not spacing_values or all(abs(v - 2.0) <= 0.05 for v in spacing_values)
+    checks.append(
+        Check(
+            "Formato", "Interlineado doble",
+            "ok" if spacing_ok else "warning",
+            "Los párrafos del cuerpo usan interlineado doble (2.0)." if spacing_ok else "Hay párrafos con interlineado distinto de 2,0.",
+            "Aplica interlineado doble a todo el texto del documento.",
         )
-        checks.append(
-            Check(
-                "Referencias", "Interlineado en referencias",
-                "warning",
-                "El interlineado de la lista no es medible en PDF.",
-                "Se formateará la lista de referencias con interlineado doble (2.0).",
-            )
-        )
+    )
 
-    citation_matches = extract_citations("\n".join(body_paragraphs))
+    # --- 4. SANGRÍA DE PRIMERA LÍNEA ---
+    body_without_headings = [
+        p for p in body_paragraphs[1:]
+        if not re.match(
+            r"^(resumen|abstract|introducción|introduccion|método|metodo|resultados|discusión|discusion|conclusión|conclusion)$",
+            p.text.strip(), re.I
+        )
+    ]
+    indent_values = [
+        length_cm(p.paragraph_format.first_line_indent)
+        for p in body_without_headings
+        if p.paragraph_format.first_line_indent is not None
+    ]
+    indent_ok = not indent_values or sum(abs(v - 1.27) <= 0.15 for v in indent_values) >= max(1, int(len(indent_values) * 0.65))
+    checks.append(
+        Check(
+            "Formato", "Sangría de primera línea",
+            "ok" if indent_ok else "warning",
+            "La mayoría de los párrafos del cuerpo tienen sangría de 1,27 cm." if indent_ok else "La sangría de primera línea en los párrafos es irregular o está ausente.",
+            "Aplica sangría de primera línea de 1,27 cm a cada párrafo del cuerpo.",
+        )
+    )
+
+    # --- 5. NUMERACIÓN DE PÁGINA ---
+    page_status = "ok" if has_page_field(document) else "warning"
+    checks.append(
+        Check(
+            "Formato", "Numeración de páginas",
+            page_status,
+            "El documento contiene numeración de páginas en el encabezado." if page_status == "ok" else "No se detectó el campo de numeración de páginas en el encabezado.",
+            "Añade el número de página alineado a la derecha en el encabezado superior.",
+        )
+    )
+
+    # --- 6. SECCIÓN Y TÍTULO DE REFERENCIAS ---
+    if reference_start is None:
+        checks.append(Check(
+            "Referencias", "Sección de referencias", "error",
+            "No se encontró un encabezado de referencias al final del documento.",
+            "Se agregará automáticamente la página de Referencias con el formato correcto al descargar el archivo corregido."
+        ))
+    else:
+        heading_clean = raw_heading_text.strip()
+        if heading_clean == "Referencias":
+            checks.append(Check(
+                "Referencias", "Sección de referencias", "ok",
+                "Se encontró la sección «Referencias» con la titulación exacta oficial.", ""
+            ))
+        else:
+            checks.append(Check(
+                "Referencias", "Sección de referencias", "warning",
+                f"Se detectó la sección bajo el título «{heading_clean}».",
+                "En APA 7.ª edición, el título oficial debe ser exactamente «Referencias» (sin 'bibliográficas' y sin minúsculas)."
+            ))
+
+    # --- 7. CITAS Y EXTRACCIÓN ---
+    full_text = "\n".join(p.text for p in body_paragraphs)
+    citation_matches = extract_citations(full_text)
     citation_count = len(citation_matches)
     reference_entries = extract_reference_entries(reference_paragraphs)
     citation_keys = {(first_author_surname(c["autor"]), c["anio"]) for c in citation_matches}
     reference_keys = {e["clave"] for e in reference_entries}
+    
     citations_without_reference = [
         c for c in citation_matches
         if (first_author_surname(c["autor"]), c["anio"]) not in reference_keys
@@ -346,16 +328,16 @@ def analyze_from_text(paragraphs: list[str], is_pdf: bool = False) -> dict:
         Check(
             "Citas", "Citas dentro del texto",
             "ok" if citation_count > 0 else "warning",
-            f"Se detectaron {citation_count} cita(s) con formato autor-año." if citation_count else "No se detectaron patrones claros de cita autor-año.",
-            "Revisa que toda idea tomada de otra fuente tenga una cita narrativa o parentética.",
+            f"Se detectaron {citation_count} cita(s) con formato autor-año." if citation_count else "No se detectaron patrones claros de cita autor-año en el texto.",
+            "Asegúrate de que cada afirmación tomada de una fuente externa tenga su cita correspondencia.",
         )
     )
 
-    if citation_count > 0:
+    if citation_count > 0 and reference_start is not None:
         if not citations_without_reference:
             checks.append(Check(
                 "Citas", "Correspondencia citas-referencias", "ok",
-                "Las citas encontradas tienen una referencia con el mismo autor y año.", ""
+                "Todas las citas encontradas tienen una entrada coincidente en la lista de referencias.", ""
             ))
         else:
             unmatched_labels = ", ".join(f"{c['autor']}, {c['anio']}" for c in citations_without_reference[:5])
@@ -364,49 +346,23 @@ def analyze_from_text(paragraphs: list[str], is_pdf: bool = False) -> dict:
                 "Citas", "Correspondencia citas-referencias", "warning",
                 f"Hay {len(citations_without_reference)} cita(s) sin una referencia coincidente: {unmatched_labels}"
                 + (f" y {extra} más." if extra > 0 else "."),
-                "Verifica que cada cita tenga su correspondiente entrada en la lista de referencias.",
+                "Verifica que cada cita en el texto tenga su correspondiente entrada en la lista de referencias.",
             ))
 
+    reference_count = len(reference_paragraphs)
     checks.append(
         Check(
             "Referencias", "Entradas bibliográficas",
-            "ok" if reference_count > 0 else "error",
-            f"Se detectaron {reference_count} entrada(s) después del encabezado de referencias." if reference_count else "La sección de referencias está vacía o no pudo identificarse.",
-            "Incluye una entrada completa por cada fuente citada.",
-        )
-    )
-
-    if reference_count > 0:
-        if not citation_count:
-            uncited_status, uncited_detail = "warning", "No se detectaron citas en el texto; no se puede confirmar que las referencias estén citadas."
-        elif uncited_references:
-            uncited_status, uncited_detail = "warning", f"Hay {len(uncited_references)} referencia(s) que no coinciden con ninguna cita detectada."
-        else:
-            uncited_status, uncited_detail = "ok", "Cada referencia coincide con al menos una cita detectada."
-        checks.append(Check(
-            "Referencias", "Referencias citadas en el texto",
-            uncited_status, uncited_detail,
-            "Elimina las referencias no utilizadas o añade la cita correspondiente en el texto.",
-        ))
-
-    reference_years = sum(
-        bool(re.search(r"\b(19|20)\d{2}[a-z]?\b", p if isinstance(p, str) else getattr(p, "text", "")))
-        for p in reference_paragraphs
-    )
-    reference_content_ok = reference_count > 0 and reference_years >= max(1, int(reference_count * 0.75))
-    checks.append(
-        Check(
-            "Referencias", "Datos básicos de las referencias",
-            "ok" if reference_content_ok else "warning",
-            f"{reference_years} de {reference_count} referencias contienen un año identificable.",
-            "Comprueba autor, fecha, título, fuente y DOI o URL según el tipo de material.",
+            "ok" if reference_count > 0 else ("error" if reference_start is None else "warning"),
+            f"Se detectaron {reference_count} entrada(s) en la sección de referencias." if reference_count else "La lista de referencias está vacía o no se ha creado.",
+            "Incluye la ficha bibliográfica completa para cada fuente citada.",
         )
     )
 
     return {
         "checks": [c.to_dict() for c in checks],
         "paragraph_count": len(paragraphs),
-        "word_count": len(re.findall(r"\b[\wÁÉÍÓÚÜÑáéíóúüñ'-]+\b", text)),
+        "word_count": len(re.findall(r"\b[\wÁÉÍÓÚÜÑáéíóúüñ'-]+\b", full_text)),
         "citation_count": citation_count,
         "citations": citation_matches,
         "reference_count": reference_count,
@@ -415,106 +371,8 @@ def analyze_from_text(paragraphs: list[str], is_pdf: bool = False) -> dict:
         "uncited_references": uncited_references,
         "ok_count": sum(c.status == "ok" for c in checks),
         "issue_count": sum(c.status != "ok" for c in checks),
-        "is_pdf": is_pdf,
+        "is_pdf": False,
     }
-
-
-def analyze_document(data: bytes, filename: str = "") -> dict:
-    if _is_pdf(data, filename):
-        text = extract_text_from_pdf(data)
-        paragraphs = text_to_paragraphs(text)
-        return analyze_from_text(paragraphs, is_pdf=True)
-
-    document = Document(io.BytesIO(data))
-    paragraphs = non_empty_paragraphs(document)
-    reference_start = find_reference_start(paragraphs)
-    body_paragraphs = paragraphs[:reference_start] if reference_start is not None else paragraphs
-    reference_paragraphs = paragraphs[reference_start + 1:] if reference_start is not None else []
-
-    checks: list[Check] = []
-
-    section = document.sections[0] if document.sections else None
-    margins = (
-        [length_inches(getattr(section, side, None)) for side in ("top_margin", "bottom_margin", "left_margin", "right_margin")]
-        if section else []
-    )
-    margins_ok = bool(margins) and all(value is not None and abs(value - 1.0) <= 0.04 for value in margins)
-    checks.append(
-        Check(
-            "Formato", "Márgenes de una pulgada",
-            "ok" if margins_ok else "error",
-            "Los cuatro márgenes están configurados aproximadamente a 2,54 cm." if margins_ok else "Se encontraron márgenes distintos de 2,54 cm en uno o más lados.",
-            "Usa márgenes de 2,54 cm en los cuatro lados.",
-        )
-    )
-
-    font_samples = paragraph_font_samples(paragraphs)
-    font_ok = not font_samples or all(s in APA_FONTS for s in font_samples)
-    font_label = ", ".join(f"{name} {size:g}" for name, size in sorted(set(font_samples))[:4])
-    checks.append(
-        Check(
-            "Formato", "Tipografía legible y consistente",
-            "ok" if font_ok else "warning",
-            f"Se detectó: {font_label or 'tipografía heredada'}." if font_ok else "Hay tipografías que no coinciden con las opciones APA 7.",
-            "Usa Times New Roman 12, Arial 11, Calibri 11, Georgia 11 o Lucida Sans Unicode 10.",
-        )
-    )
-
-    spacing_values = []
-    for paragraph in body_paragraphs:
-        value = paragraph.paragraph_format.line_spacing
-        if isinstance(value, (int, float)):
-            spacing_values.append(float(value))
-    spacing_ok = not spacing_values or all(abs(v - 2.0) <= 0.05 for v in spacing_values)
-    checks.append(
-        Check(
-            "Formato", "Interlineado doble",
-            "ok" if spacing_ok else "warning",
-            "Los párrafos usan interlineado doble." if spacing_ok else "Hay párrafos con interlineado distinto de 2,0.",
-            "Aplica interlineado doble a todo el texto.",
-        )
-    )
-
-    body_without_headings = [
-        p for p in body_paragraphs[1:]
-        if not re.match(
-            r"^(resumen|abstract|introducción|introduccion|método|metodo|resultados|discusión|discusion|conclusión|conclusion)$",
-            p.text.strip(), re.I
-        )
-    ]
-    indent_values = [
-        length_inches(p.paragraph_format.first_line_indent)
-        for p in body_without_headings
-        if p.paragraph_format.first_line_indent is not None
-    ]
-    indent_ok = not indent_values or sum(abs(v - 0.5) <= 0.06 for v in indent_values) >= max(1, int(len(indent_values) * 0.65))
-    checks.append(
-        Check(
-            "Formato", "Sangría de primera línea",
-            "ok" if indent_ok else "warning",
-            "La mayoría de los párrafos usa sangría de 1,27 cm." if indent_ok else "La sangría de primera línea es irregular.",
-            "Aplica sangría de primera línea de 1,27 cm.",
-        )
-    )
-
-    page_status = "ok" if has_page_field(document) else "warning"
-    checks.append(
-        Check(
-            "Formato", "Numeración de páginas",
-            page_status,
-            "El documento contiene numeración de páginas." if page_status == "ok" else "No se detectó numeración de páginas.",
-            "Añade el número de página en la esquina superior derecha.",
-        )
-    )
-
-    text_result = analyze_from_text([p.text for p in paragraphs], is_pdf=False)
-    text_result["checks"] = [c.to_dict() for c in checks] + [
-        c for c in text_result["checks"] if c["category"] != "Formato"
-    ]
-    text_result["ok_count"] = sum(1 for c in text_result["checks"] if c["status"] == "ok")
-    text_result["issue_count"] = sum(1 for c in text_result["checks"] if c["status"] != "ok")
-    text_result["is_pdf"] = False
-    return text_result
 
 
 def set_run_font(run, name: str = "Times New Roman", size: int = 12) -> None:
@@ -549,80 +407,13 @@ def add_page_number(paragraph) -> None:
     set_run_font(run, size=12)
 
 
-def build_apa_docx_from_text(paragraphs: list[str]) -> bytes:
-    document = Document()
-
-    for section in document.sections:
-        section.top_margin = Inches(1)
-        section.bottom_margin = Inches(1)
-        section.left_margin = Inches(1)
-        section.right_margin = Inches(1)
-        header = section.header
-        header_paragraph = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
-        header_paragraph.clear()
-        add_page_number(header_paragraph)
-
-    try:
-        normal = document.styles["Normal"]
-        normal.font.name = "Times New Roman"
-        normal.font.size = Pt(12)
-        if normal._element.rPr is not None and normal._element.rPr.rFonts is not None:
-            normal._element.rPr.rFonts.set(qn("w:eastAsia"), "Times New Roman")
-        normal.paragraph_format.line_spacing = 2
-        normal.paragraph_format.space_after = Pt(0)
-    except KeyError:
-        pass
-
-    reference_mode = False
-    for text in paragraphs:
-        text = text.strip()
-        if not text:
-            continue
-
-        if is_reference_heading(text):
-            reference_mode = True
-            p = document.add_paragraph()
-            run = p.add_run("Referencias")
-            set_run_font(run)
-            p.paragraph_format.line_spacing = 2
-            p.paragraph_format.first_line_indent = Inches(0)
-            p.paragraph_format.left_indent = Inches(0)
-            continue
-
-        p = document.add_paragraph()
-        run = p.add_run(text)
-        set_run_font(run)
-        p.paragraph_format.line_spacing = 2
-        p.paragraph_format.space_after = Pt(0)
-
-        is_heading = text.lower() in {
-            "resumen", "abstract", "introducción", "introduccion",
-            "método", "metodo", "resultados", "discusión", "discusion",
-            "conclusión", "conclusion", "referencias"
-        }
-
-        if is_heading:
-            p.paragraph_format.first_line_indent = Inches(0)
-            p.paragraph_format.left_indent = Inches(0)
-        elif reference_mode:
-            p.paragraph_format.left_indent = Inches(0.5)
-            p.paragraph_format.first_line_indent = Inches(-0.5)
-        else:
-            p.paragraph_format.left_indent = Inches(0)
-            p.paragraph_format.first_line_indent = Inches(0.5)
-
-    output = io.BytesIO()
-    document.save(output)
-    return output.getvalue()
-
-
 def correct_document(data: bytes, filename: str = "") -> bytes:
-    if _is_pdf(data, filename):
-        text = extract_text_from_pdf(data)
-        paragraphs = text_to_paragraphs(text)
-        return build_apa_docx_from_text(paragraphs)
+    if not filename.lower().endswith(".docx"):
+        raise ValueError("Solo se pueden corregir archivos .docx.")
 
     document = Document(io.BytesIO(data))
+
+    # 1. Aplicar márgenes de 2.54 cm
     for section in document.sections:
         section.top_margin = Inches(1)
         section.bottom_margin = Inches(1)
@@ -634,6 +425,7 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
             header_paragraph.clear()
             add_page_number(header_paragraph)
 
+    # 2. Configurar estilo base
     try:
         normal_style = document.styles["Normal"]
         normal_style.font.name = "Times New Roman"
@@ -646,13 +438,25 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
         pass
 
     paragraphs = non_empty_paragraphs(document)
-    reference_start = find_reference_start(paragraphs)
+    reference_start, _ = find_reference_start(paragraphs)
     reference_mode = False
 
+    # 3. Formatear párrafos existentes
     for index, paragraph in enumerate(paragraphs):
         text = paragraph.text.strip()
+        
         if reference_start is not None and index == reference_start:
             reference_mode = True
+            paragraph.text = "Referencias"
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            paragraph.paragraph_format.first_line_indent = Inches(0)
+            paragraph.paragraph_format.left_indent = Inches(0)
+            paragraph.paragraph_format.line_spacing = 2
+            for run in paragraph.runs:
+                set_run_font(run)
+                run.bold = True
+            continue
+
         paragraph.paragraph_format.line_spacing = 2
         paragraph.paragraph_format.space_after = Pt(0)
         for run in paragraph.runs:
@@ -663,7 +467,7 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
             or text.lower() in {
                 "resumen", "abstract", "introducción", "introduccion",
                 "método", "metodo", "resultados", "discusión", "discusion",
-                "conclusión", "conclusion", "referencias"
+                "conclusión", "conclusion"
             }
         )
         if is_heading:
@@ -677,6 +481,47 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
         else:
             paragraph.paragraph_format.left_indent = Inches(0)
             paragraph.paragraph_format.first_line_indent = Inches(0.5)
+
+    # 4. Si NO había sección de referencias, construir la plantilla de referencias al final
+    if reference_start is None:
+        document.add_page_break()
+        ref_heading = document.add_paragraph()
+        ref_heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = ref_heading.add_run("Referencias")
+        set_run_font(run)
+        run.bold = True
+        ref_heading.paragraph_format.line_spacing = 2
+        ref_heading.paragraph_format.first_line_indent = Inches(0)
+        ref_heading.paragraph_format.left_indent = Inches(0)
+
+        # Extraer citas del texto para armar plantillas
+        full_text = "\n".join(p.text for p in paragraphs)
+        citations = extract_citations(full_text)
+        
+        if citations:
+            # Ordenar autores alfabéticamente
+            sorted_authors = sorted(set(c["autor"] for c in citations if c["autor"]))
+            for autor in sorted_authors:
+                p = document.add_paragraph()
+                p.paragraph_format.line_spacing = 2
+                p.paragraph_format.left_indent = Inches(0.5)
+                p.paragraph_format.first_line_indent = Inches(-0.5)
+                
+                # Crear la plantilla para que el estudiante la complete
+                run_entry = p.add_run(f"{autor}. (Año). ")
+                set_run_font(run_entry)
+                run_title = p.add_run("[Título del documento o publicación en cursiva]. ")
+                set_run_font(run_title)
+                run_title.italic = True
+                run_source = p.add_run("[Nombre de la fuente, Editorial o URL].")
+                set_run_font(run_source)
+        else:
+            p = document.add_paragraph()
+            p.paragraph_format.line_spacing = 2
+            p.paragraph_format.left_indent = Inches(0.5)
+            p.paragraph_format.first_line_indent = Inches(-0.5)
+            run_empty = p.add_run("[Añade aquí las fuentes bibliográficas citadas ordenadas alfabéticamente].")
+            set_run_font(run_empty)
 
     output = io.BytesIO()
     document.save(output)
