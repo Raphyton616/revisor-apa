@@ -23,20 +23,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-BASE_DIR = Path(__file__).resolve().parent
-TEMPLATES_DIR = BASE_DIR / "templates" if (BASE_DIR / "templates").exists() else BASE_DIR / "app" / "templates"
-STATIC_DIR = BASE_DIR / "static" if (BASE_DIR / "static").exists() else BASE_DIR / "app" / "static"
+# Definir la raíz absoluta del proyecto evitando duplicar 'app'
+CURRENT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = CURRENT_DIR.parent if CURRENT_DIR.name == "app" else CURRENT_DIR
+
+# Buscar carpeta de plantillas (templates) en raíz o subdirectorios
+TEMPLATES_DIR = PROJECT_ROOT / "templates"
+if not TEMPLATES_DIR.exists():
+    TEMPLATES_DIR = PROJECT_ROOT / "app" / "templates"
+
+# Buscar carpeta de estáticos (static)
+STATIC_DIR = PROJECT_ROOT / "static"
+if not STATIC_DIR.exists():
+    STATIC_DIR = PROJECT_ROOT / "app" / "static"
 
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
-    if not (TEMPLATES_DIR / "index.html").exists():
+    index_path = TEMPLATES_DIR / "index.html"
+    if not index_path.exists():
         return HTMLResponse(
-            f"<h3>Error de plantilla</h3><p>No se encontró <code>index.html</code> en <code>{TEMPLATES_DIR}</code>.</p>",
+            f"<h3>Error de configuración</h3>"
+            f"<p>No se encontró <code>index.html</code> en la ruta: <code>{TEMPLATES_DIR}</code>.</p>"
+            f"<p>Asegúrate de que la carpeta <strong>templates</strong> que contiene <strong>index.html</strong> esté subida a tu repositorio.</p>",
             status_code=500,
         )
     return templates.TemplateResponse("index.html", {"request": request})
@@ -66,4 +81,4 @@ async def api_correct(file: UploadFile = File(...)):
         content=corrected,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="{out_name}"'},
-        )
+                     )
