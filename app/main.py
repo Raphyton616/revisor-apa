@@ -1,11 +1,9 @@
 """
-Servidor FastAPI para RevisorAPA.
-Procesa análisis y corrección exclusiva de archivos .docx.
+Servidor FastAPI para RevisorAPA (Solo .docx)
 """
 
-from __future__ import annotations
-
 import os
+from pathlib import Path
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response
@@ -25,66 +23,47 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-templates = Jinja2Templates(directory="templates")
-if os.path.exists("static"):
-    app.mount("/static", StaticFiles(directory="static"), name="static")
+BASE_DIR = Path(__file__).resolve().parent
+TEMPLATES_DIR = BASE_DIR / "templates" if (BASE_DIR / "templates").exists() else BASE_DIR / "app" / "templates"
+STATIC_DIR = BASE_DIR / "static" if (BASE_DIR / "static").exists() else BASE_DIR / "app" / "static"
+
+STATIC_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
+    if not (TEMPLATES_DIR / "index.html").exists():
+        return HTMLResponse(
+            f"<h3>Error de plantilla</h3><p>No se encontró <code>index.html</code> en <code>{TEMPLATES_DIR}</code>.</p>",
+            status_code=500,
+        )
     return templates.TemplateResponse("index.html", {"request": request})
 
 
 @app.post("/api/analyze")
 async def api_analyze(file: UploadFile = File(...)):
-    filename = file.filename or ""
-    if not filename.lower().endswith(".docx"):
-        raise HTTPException(
-            status_code=400,
-            detail="¡Solo se admite formato .docx! ⚠️",
-        )
-
+    if not (file.filename or "").lower().endswith(".docx"):
+        raise HTTPException(status_code=400, detail="¡Solo se admite formato .docx! ⚠️")
     data = await file.read()
     if not data:
-        raise HTTPException(status_code=400, detail="El archivo subido está vacío.")
-
-    try:
-        result = analyze_document(data, filename)
-        return result
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error al analizar el documento Word: {str(e)}",
-        )
+        raise HTTPException(status_code=400, detail="El archivo está vacío.")
+    return analyze_document(data, file.filename or "")
 
 
 @app.post("/api/correct")
 async def api_correct(file: UploadFile = File(...)):
-    filename = file.filename or ""
-    if not filename.lower().endswith(".docx"):
-        raise HTTPException(
-            status_code=400,
-            detail="¡Solo se admite formato .docx! ⚠️",
-        )
-
+    if not (file.filename or "").lower().endswith(".docx"):
+        raise HTTPException(status_code=400, detail="¡Solo se admite formato .docx! ⚠️")
     data = await file.read()
     if not data:
-        raise HTTPException(status_code=400, detail="El archivo subido está vacío.")
-
-    try:
-        corrected_data = correct_document(data, filename)
-        base_name = os.path.splitext(filename)[0]
-        output_name = f"{base_name}_APA7_Corregido.docx"
-
-        return Response(
-            content=corrected_data,
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={
-                "Content-Disposition": f'attachment; filename="{output_name}"'
-            },
+        raise HTTPException(status_code=400, detail="El archivo está vacío.")
+    
+    corrected = correct_document(data, file.filename or "")
+    out_name = f"{Path(file.filename or 'doc').stem}_APA7_Corregido.docx"
+    return Response(
+        content=corrected,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{out_name}"'},
         )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error al generar el documento corregido: {str(e)}",
-)
