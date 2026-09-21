@@ -17,11 +17,11 @@ from docx.shared import Inches, Pt
 
 
 APA_FONTS = {
-    ("Times New Roman", 12),
-    ("Arial", 11),
-    ("Calibri", 11),
-    ("Georgia", 11),
-    ("Lucida Sans Unicode", 10),
+    ("Times New Roman", 12.0),
+    ("Arial", 11.0),
+    ("Calibri", 11.0),
+    ("Georgia", 11.0),
+    ("Lucida Sans Unicode", 10.0),
 }
 
 
@@ -67,7 +67,7 @@ def paragraph_font_samples(paragraphs: list) -> list[tuple[str, float]]:
                 continue
             font_name = run.font.name or "Times New Roman"
             size = run.font.size.pt if run.font.size else 12.0
-            samples.append((font_name, round(size, 1)))
+            samples.append((str(font_name), round(float(size), 1)))
     return samples
 
 
@@ -94,6 +94,15 @@ def find_reference_start(paragraphs: list) -> tuple[int | None, str]:
     return None, ""
 
 
+def first_author_surname(author: str) -> str:
+    if not isinstance(author, str):
+        return ""
+    cleaned = re.sub(r"\bet\s+al\.?\b", "", author, flags=re.I)
+    cleaned = re.split(r"\s+(?:y|e|and|&)\s+", cleaned, maxsplit=1, flags=re.I)[0]
+    cleaned = cleaned.split(",", 1)[0].strip().lower()
+    return re.sub(r"[^a-záéíóúüñ0-9 -]", "", cleaned).strip()
+
+
 def extract_citations(text: str) -> list[dict]:
     citations: list[dict] = []
 
@@ -110,8 +119,8 @@ def extract_citations(text: str) -> list[dict]:
             )
             if not match:
                 continue
-            autor = match.group("autor").strip()
-            anio = match.group("anio")
+            autor = str(match.group("autor")).strip()
+            anio = str(match.group("anio")).strip()
             citations.append(
                 {
                     "autor": autor,
@@ -131,28 +140,21 @@ def extract_citations(text: str) -> list[dict]:
     for autor, anio in narrative:
         citations.append(
             {
-                "autor": autor.strip(),
-                "anio": anio,
+                "autor": str(autor).strip(),
+                "anio": str(anio).strip(),
                 "tipo": "narrativa",
-                "texto": f"{autor.strip()} ({anio})",
+                "texto": f"{str(autor).strip()} ({anio})",
             }
         )
 
     unique = []
     seen = set()
     for citation in citations:
-        key = (citation["autor"].lower(), citation["anio"])
+        key = (first_author_surname(citation["autor"]), str(citation["anio"]))
         if key not in seen:
             seen.add(key)
             unique.append(citation)
     return unique
-
-
-def first_author_surname(author: str) -> str:
-    cleaned = re.sub(r"\bet\s+al\.?\b", "", author, flags=re.I)
-    cleaned = re.split(r"\s+(?:y|e|and|&)\s+", cleaned, maxsplit=1, flags=re.I)[0]
-    cleaned = cleaned.split(",", 1)[0].strip().lower()
-    return re.sub(r"[^a-záéíóúüñ0-9 -]", "", cleaned).strip()
 
 
 def extract_reference_entries(reference_paragraphs: list) -> list[dict]:
@@ -162,19 +164,19 @@ def extract_reference_entries(reference_paragraphs: list) -> list[dict]:
         if not text:
             continue
         year_match = re.search(r"\b((?:19|20)\d{2}[a-z]?)\b", text)
+        anio_str = str(year_match.group(1)) if year_match else ""
         if "," in text:
             author = text.split(",", 1)[0].strip()
         else:
             author = text.split(".", 1)[0].strip()
+        
+        author_str = str(author)
         entries.append(
             {
-                "autor": author,
-                "anio": year_match.group(1) if year_match else "",
+                "autor": author_str,
+                "anio": anio_str,
                 "texto": text,
-                "clave": (
-                    first_author_surname(author),
-                    year_match.group(1) if year_match else "",
-                ),
+                "surname": first_author_surname(author_str),
             }
         )
     return entries
@@ -265,7 +267,7 @@ def analyze_document(data: bytes, filename: str = "") -> dict:
         for p in body_without_headings
         if p.paragraph_format.first_line_indent is not None
     ]
-    indent_ok = not indent_values or sum(abs(v - 1.27) <= 0.15 for v in indent_values) >= max(1, int(len(indent_values) * 0.65))
+    indent_ok = not indent_values or sum(abs(v - 1.27) <= 0.15 for v in indent_values if v is not None) >= max(1, int(len(indent_values) * 0.65))
     checks.append(
         Check(
             "Formato", "Sangría de primera línea",
@@ -304,7 +306,7 @@ def analyze_document(data: bytes, filename: str = "") -> dict:
             checks.append(Check(
                 "Referencias", "Sección de referencias", "warning",
                 f"Se detectó la sección bajo el título «{heading_clean}».",
-                "En APA 7.ª edición, el título oficial debe ser exactamente «Referencias» (sin 'bibliográficas' y sin minúsculas)."
+                "En APA 7.ª edición, el título oficial debe ser exactamente «Referencias»."
             ))
 
     # 7. Citas y extracción
@@ -312,16 +314,17 @@ def analyze_document(data: bytes, filename: str = "") -> dict:
     citation_matches = extract_citations(full_text)
     citation_count = len(citation_matches)
     reference_entries = extract_reference_entries(reference_paragraphs)
-    citation_keys = {(first_author_surname(c["autor"]), c["anio"]) for c in citation_matches}
-    reference_keys = {e["clave"] for e in reference_entries}
+    
+    citation_keys = {(first_author_surname(c["autor"]), str(c["anio"])) for c in citation_matches}
+    reference_keys = {(e["surname"], str(e["anio"])) for e in reference_entries}
     
     citations_without_reference = [
         c for c in citation_matches
-        if (first_author_surname(c["autor"]), c["anio"]) not in reference_keys
+        if (first_author_surname(c["autor"]), str(c["anio"])) not in reference_keys
     ]
     uncited_references = [
         e for e in reference_entries
-        if not e["anio"] or e["clave"] not in citation_keys
+        if not e["anio"] or (e["surname"], str(e["anio"])) not in citation_keys
     ]
 
     checks.append(
@@ -329,7 +332,7 @@ def analyze_document(data: bytes, filename: str = "") -> dict:
             "Citas", "Citas dentro del texto",
             "ok" if citation_count > 0 else "warning",
             f"Se detectaron {citation_count} cita(s) con formato autor-año." if citation_count else "No se detectaron patrones claros de cita autor-año en el texto.",
-            "Asegúrate de que cada afirmación tomada de una fuente externa tenga su cita correspondencia.",
+            "Asegúrate de que cada afirmación tomada de una fuente externa tenga su cita correspondiente.",
         )
     )
 
@@ -519,3 +522,4 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
     output = io.BytesIO()
     document.save(output)
     return output.getvalue()
+                
