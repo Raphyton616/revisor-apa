@@ -80,7 +80,6 @@ def has_page_field(document: Document) -> bool:
 
 
 def is_reference_heading(text: str) -> bool:
-    """Detecta si un texto corresponde a un encabezado de referencias o variantes."""
     text_clean = text.strip()
     text_clean = re.sub(r"^\d+\s+|\s+\d+$", "", text_clean)
     pattern = r"^\s*(referencias(\s+bibliográficas|\s+bibliograficas)?|references|bibliografía|bibliografia)\b"
@@ -180,7 +179,8 @@ def extract_reference_entries(reference_paragraphs: list) -> list[dict]:
         )
     return entries
 
-    def analyze_document(data: bytes, filename: str = "") -> dict:
+
+def analyze_document(data: bytes, filename: str = "") -> dict:
     if not filename.lower().endswith(".docx"):
         raise ValueError("La aplicación está optimizada exclusivamente para archivos .docx.")
 
@@ -193,7 +193,7 @@ def extract_reference_entries(reference_paragraphs: list) -> list[dict]:
 
     checks: list[Check] = []
 
-    # --- 1. VERIFICACIÓN DE MÁRGENES ESPECÍFICOS ---
+    # 1. Márgenes
     section = document.sections[0] if document.sections else None
     if section:
         top_cm = length_cm(getattr(section, "top_margin", None))
@@ -223,7 +223,7 @@ def extract_reference_entries(reference_paragraphs: list) -> list[dict]:
                 "Ajusta los márgenes a 2,54 cm en la pestaña Disposición > Márgenes de Word."
             ))
 
-    # --- 2. TIPOGRAFÍA ---
+    # 2. Tipografía
     font_samples = paragraph_font_samples(paragraphs)
     font_ok = not font_samples or all(s in APA_FONTS for s in font_samples)
     font_label = ", ".join(f"{name} {size:g}" for name, size in sorted(set(font_samples))[:4])
@@ -236,7 +236,7 @@ def extract_reference_entries(reference_paragraphs: list) -> list[dict]:
         )
     )
 
-    # --- 3. INTERLINEADO ---
+    # 3. Interlineado
     spacing_values = []
     for paragraph in body_paragraphs:
         value = paragraph.paragraph_format.line_spacing
@@ -252,7 +252,7 @@ def extract_reference_entries(reference_paragraphs: list) -> list[dict]:
         )
     )
 
-    # --- 4. SANGRÍA DE PRIMERA LÍNEA ---
+    # 4. Sangría de primera línea
     body_without_headings = [
         p for p in body_paragraphs[1:]
         if not re.match(
@@ -275,7 +275,7 @@ def extract_reference_entries(reference_paragraphs: list) -> list[dict]:
         )
     )
 
-    # --- 5. NUMERACIÓN DE PÁGINA ---
+    # 5. Numeración de página
     page_status = "ok" if has_page_field(document) else "warning"
     checks.append(
         Check(
@@ -286,7 +286,7 @@ def extract_reference_entries(reference_paragraphs: list) -> list[dict]:
         )
     )
 
-    # --- 6. SECCIÓN Y TÍTULO DE REFERENCIAS ---
+    # 6. Sección de referencias
     if reference_start is None:
         checks.append(Check(
             "Referencias", "Sección de referencias", "error",
@@ -307,7 +307,7 @@ def extract_reference_entries(reference_paragraphs: list) -> list[dict]:
                 "En APA 7.ª edición, el título oficial debe ser exactamente «Referencias» (sin 'bibliográficas' y sin minúsculas)."
             ))
 
-    # --- 7. CITAS Y EXTRACCIÓN ---
+    # 7. Citas y extracción
     full_text = "\n".join(p.text for p in body_paragraphs)
     citation_matches = extract_citations(full_text)
     citation_count = len(citation_matches)
@@ -413,7 +413,6 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
 
     document = Document(io.BytesIO(data))
 
-    # 1. Aplicar márgenes de 2.54 cm
     for section in document.sections:
         section.top_margin = Inches(1)
         section.bottom_margin = Inches(1)
@@ -425,7 +424,6 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
             header_paragraph.clear()
             add_page_number(header_paragraph)
 
-    # 2. Configurar estilo base
     try:
         normal_style = document.styles["Normal"]
         normal_style.font.name = "Times New Roman"
@@ -441,7 +439,6 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
     reference_start, _ = find_reference_start(paragraphs)
     reference_mode = False
 
-    # 3. Formatear párrafos existentes
     for index, paragraph in enumerate(paragraphs):
         text = paragraph.text.strip()
         
@@ -482,7 +479,6 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
             paragraph.paragraph_format.left_indent = Inches(0)
             paragraph.paragraph_format.first_line_indent = Inches(0.5)
 
-    # 4. Si NO había sección de referencias, construir la plantilla de referencias al final
     if reference_start is None:
         document.add_page_break()
         ref_heading = document.add_paragraph()
@@ -494,12 +490,10 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
         ref_heading.paragraph_format.first_line_indent = Inches(0)
         ref_heading.paragraph_format.left_indent = Inches(0)
 
-        # Extraer citas del texto para armar plantillas
         full_text = "\n".join(p.text for p in paragraphs)
         citations = extract_citations(full_text)
         
         if citations:
-            # Ordenar autores alfabéticamente
             sorted_authors = sorted(set(c["autor"] for c in citations if c["autor"]))
             for autor in sorted_authors:
                 p = document.add_paragraph()
@@ -507,7 +501,6 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
                 p.paragraph_format.left_indent = Inches(0.5)
                 p.paragraph_format.first_line_indent = Inches(-0.5)
                 
-                # Crear la plantilla para que el estudiante la complete
                 run_entry = p.add_run(f"{autor}. (Año). ")
                 set_run_font(run_entry)
                 run_title = p.add_run("[Título del documento o publicación en cursiva]. ")
