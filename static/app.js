@@ -5,7 +5,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const uploadError = document.getElementById("upload-error");
   const uploadLoading = document.getElementById("upload-loading");
   const analysisContainer = document.getElementById("analysis-container");
-
   const btnOpenUpload = document.getElementById("btn-open-upload");
   const btnCloseModal = document.getElementById("btn-close-modal");
 
@@ -86,7 +85,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       renderAnalysis(data);
       uploadLoading.classList.add("hidden");
-      hideOverlay(); // Cierre animado hacia la izquierda
+      hideOverlay();
     } catch (err) {
       uploadLoading.classList.add("hidden");
       showError(err.message);
@@ -102,7 +101,9 @@ document.addEventListener("DOMContentLoaded", () => {
       <div class="results-header">
         <div>
           <h2>Informe de Verificación APA 7</h2>
-          <p style="color: var(--ink-soft); font-size: 0.9rem;">Documento: <strong>${escapeHtml(currentFile.name)}</strong></p>
+          <p style="color: var(--ink-soft); font-size: 0.9rem;">
+            Documento: <strong>${escapeHtml(currentFile.name)}</strong>
+          </p>
         </div>
         <button id="btn-correct-doc" class="btn-primary">✨ Corregir documento</button>
       </div>
@@ -138,26 +139,35 @@ document.addEventListener("DOMContentLoaded", () => {
       const categoryChecks = data.checks.filter((c) => c.category === cat);
       if (categoryChecks.length === 0) return;
 
-      checksHtml += `<div class="check-section"><h3>${cat}</h3>`;
+      checksHtml += `<div class="check-section"><h3>${escapeHtml(cat)}</h3>`;
+
       categoryChecks.forEach((c) => {
         const iconMap = { ok: "✓", warning: "!", error: "×" };
+        const recommendationHtml =
+          c.recommendation && c.status !== "ok"
+            ? `<div class="check-recommendation">Recomendación: ${escapeHtml(c.recommendation)}</div>`
+            : "";
+
         checksHtml += `
           <div class="check-card check-${c.status}">
             <div class="check-icon">${iconMap[c.status] || "!"}</div>
             <div>
               <div class="check-title">${escapeHtml(c.title)}</div>
               <div class="check-detail">${escapeHtml(c.detail)}</div>
-              ${c.recommendation && c.status !== "ok" ? `<div class="check-recommendation">Recomendación: ${escapeHtml(c.recommendation)}</div>` : ""}
+              ${recommendationHtml}
             </div>
           </div>
         `;
       });
+
       checksHtml += `</div>`;
     });
 
     analysisContainer.innerHTML = headerHtml + metricsHtml + checksHtml;
 
-    document.getElementById("btn-correct-doc").addEventListener("click", downloadCorrectedDocument);
+    document
+      .getElementById("btn-correct-doc")
+      .addEventListener("click", downloadCorrectedDocument);
   }
 
   async function downloadCorrectedDocument() {
@@ -185,7 +195,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = currentFile.name.replace(".docx", "") + "_APA7_Corregido.docx";
+      a.download = currentFile.name.replace(/\.docx$/i, "") + "_APA7_Corregido.docx";
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -201,6 +211,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function escapeHtml(str) {
-    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    if (typeof str !== "string") return "";
+    return str
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
   }
 });
