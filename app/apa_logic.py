@@ -106,7 +106,8 @@ def first_author_surname(author: str) -> str:
     cleaned = re.split(r"\s+(?:y|e|and|&)\s+", cleaned, maxsplit=1, flags=re.I)[0]
     cleaned = cleaned.split(",", 1)[0].strip().lower()
     return re.sub(r"[^a-záéíóúüñ0-9 -]", "", cleaned).strip()
-    
+
+
 def extract_citations(text: str) -> list[dict]:
     citations: list[dict] = []
 
@@ -193,7 +194,10 @@ def extract_reference_entries(reference_paragraphs: list) -> list[dict]:
                 "surname": first_author_surname(author),
             }
         )
-    return entriesdef analyze_document(data: bytes, filename: str = "") -> dict:
+    return entries
+
+
+def analyze_document(data: bytes, filename: str = "") -> dict:
     if not filename.lower().endswith(".docx"):
         raise ValueError("La aplicación está optimizada exclusivamente para archivos .docx.")
 
@@ -332,7 +336,9 @@ def extract_reference_entries(reference_paragraphs: list) -> list[dict]:
             else "No se detectó el campo de numeración de páginas en el encabezado.",
             "Añade el número de página alineado a la derecha en el encabezado superior.",
         )
-    )# 6. Sección de referencias
+    )
+
+    # 6. Sección de referencias
     if reference_start is None:
         checks.append(
             Check(
@@ -450,7 +456,10 @@ def extract_reference_entries(reference_paragraphs: list) -> list[dict]:
         "ok_count": sum(c.status == "ok" for c in checks),
         "issue_count": sum(c.status != "ok" for c in checks),
         "is_pdf": False,
-    }def set_run_font(run, name: str = "Times New Roman", size: int = 12) -> None:
+    }
+
+
+def set_run_font(run, name: str = "Times New Roman", size: int = 12) -> None:
     run.font.name = name
     run.font.size = Pt(size)
     r_pr = run._element.get_or_add_rPr()
@@ -494,7 +503,6 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
 
     document = Document(io.BytesIO(data))
 
-    # Márgenes y numeración de página
     for section in document.sections:
         section.top_margin = Inches(1)
         section.bottom_margin = Inches(1)
@@ -507,7 +515,6 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
             header_paragraph.clear()
             add_page_number(header_paragraph)
 
-    # Estilo Normal
     try:
         normal_style = document.styles["Normal"]
         normal_style.font.name = "Times New Roman"
@@ -526,7 +533,6 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
     for index, paragraph in enumerate(paragraphs):
         text = paragraph.text.strip()
 
-        # Encabezado de Referencias
         if reference_start is not None and index == reference_start:
             reference_mode = True
             paragraph.text = "Referencias"
@@ -539,7 +545,6 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
                 run.bold = True
             continue
 
-        # Formato general de párrafo
         paragraph.paragraph_format.line_spacing = 2
         paragraph.paragraph_format.space_after = Pt(0)
 
@@ -579,7 +584,8 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
             paragraph.paragraph_format.first_line_indent = Inches(-0.5)
         else:
             paragraph.paragraph_format.left_indent = Inches(0)
-            paragraph.paragraph_format.first_line_indent = Inches(0.5)# Si no existía sección de referencias, la creamos
+            paragraph.paragraph_format.first_line_indent = Inches(0.5)
+
     if reference_start is None:
         document.add_page_break()
 
