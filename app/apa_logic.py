@@ -105,7 +105,9 @@ def first_author_surname(author: str) -> str:
     cleaned = re.sub(r"\bet\s+al\.?\b", "", author, flags=re.I)
     cleaned = re.split(r"\s+(?:y|e|and|&)\s+", cleaned, maxsplit=1, flags=re.I)[0]
     cleaned = cleaned.split(",", 1)[0].strip().lower()
-    return re.sub(r"[^a-záéíóúüñ0-9 -]", "", cleaned).strip()def extract_citations(text: str) -> list[dict]:
+    return re.sub(r"[^a-záéíóúüñ0-9 -]", "", cleaned).strip()
+    
+def extract_citations(text: str) -> list[dict]:
     citations: list[dict] = []
 
     parenthetical_groups = re.findall(
