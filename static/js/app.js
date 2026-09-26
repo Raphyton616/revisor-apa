@@ -163,7 +163,60 @@ document.addEventListener("DOMContentLoaded", () => {
       checksHtml += `</div>`;
     });
 
-    analysisContainer.innerHTML = headerHtml + metricsHtml + checksHtml;
+    // ----- NUEVO: Citas sin referencia -----
+    let missingRefsHtml = "";
+    if (data.citations_without_reference && data.citations_without_reference.length > 0) {
+      const items = data.citations_without_reference
+        .map(
+          (c) =>
+            `<li><strong>\( {escapeHtml(c.autor)}</strong> ( \){escapeHtml(c.anio)}) — <em>${escapeHtml(c.tipo)}</em></li>`
+        )
+        .join("");
+
+      missingRefsHtml = `
+        <div class="check-section">
+          <h3>Citas sin referencia coincidente</h3>
+          <div class="check-card check-warning">
+            <div class="check-icon">!</div>
+            <div>
+              <div class="check-title">Estas citas no tienen entrada en la lista de referencias</div>
+              <ul class="detail-list">
+                ${items}
+              </ul>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ----- NUEVO: Referencias no citadas -----
+    let uncitedHtml = "";
+    if (data.uncited_references && data.uncited_references.length > 0) {
+      const items = data.uncited_references
+        .map(
+          (r) =>
+            `<li><strong>\( {escapeHtml(r.autor)}</strong> \){r.anio ? ` (${escapeHtml(r.anio)})` : ""}</li>`
+        )
+        .join("");
+
+      uncitedHtml = `
+        <div class="check-section">
+          <h3>Referencias no citadas en el texto</h3>
+          <div class="check-card check-warning">
+            <div class="check-icon">!</div>
+            <div>
+              <div class="check-title">Estas entradas aparecen en Referencias pero no se citaron</div>
+              <ul class="detail-list">
+                ${items}
+              </ul>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    analysisContainer.innerHTML =
+      headerHtml + metricsHtml + checksHtml + missingRefsHtml + uncitedHtml;
 
     document
       .getElementById("btn-correct-doc")
