@@ -28,7 +28,7 @@ APA_FONTS = {
 class Check:
     category: str
     title: str
-    status: str  # "ok" | "warning" | "error"
+    status: str
     detail: str
     recommendation: str = ""
 
@@ -83,7 +83,6 @@ def has_page_field(document: Document) -> bool:
 
 def is_reference_heading(text: str) -> bool:
     text_clean = text.strip()
-    # Quitar numeración al inicio o final (ej: "1 Referencias" o "Referencias 1")
     text_clean = re.sub(r"^\d+[\.\)]?\s*|\s*\d+$", "", text_clean)
     pattern = (
         r"^\s*(referencias(\s+bibliográficas|\s+bibliograficas)?|"
@@ -106,27 +105,15 @@ def first_author_surname(author: str) -> str:
     cleaned = re.sub(r"\bet\s+al\.?\b", "", author, flags=re.I)
     cleaned = re.split(r"\s+(?:y|e|and|&)\s+", cleaned, maxsplit=1, flags=re.I)[0]
     cleaned = cleaned.split(",", 1)[0].strip().lower()
-    return re.sub(r"[^a-záéíóúüñ0-9 -]", "", cleaned).strip()
-
-
-def extract_citations(text: str) -> list[dict]:
-    """
-    Extrae citas parentéticas y narrativas con mejor soporte de:
-    - et al.
-    - dos o más autores
-    - años con letra (2020a)
-    - páginas (p. / pp.)
-    """
+    return re.sub(r"[^a-záéíóúüñ0-9 -]", "", cleaned).strip()def extract_citations(text: str) -> list[dict]:
     citations: list[dict] = []
 
-    # ----- Citas parentéticas: (Autor, 2020) o (Autor y Autor, 2020, p. 45) -----
     parenthetical_groups = re.findall(
         r"\(([^()]{3,200}?(?:19|20)\d{2}[a-z]?(?:[^()]{0,80})?)\)",
         text,
     )
 
     for group in parenthetical_groups:
-        # Puede haber varias citas separadas por punto y coma
         for part in re.split(r"\s*;\s*", group):
             match = re.search(
                 r"(?P<autor>[A-ZÁÉÍÓÚÑ][^()]{1,120}?),\s*"
@@ -140,7 +127,6 @@ def extract_citations(text: str) -> list[dict]:
             autor = match.group("autor").strip()
             anio = match.group("anio").strip()
 
-            # Evitar capturar cosas que no son citas (ej. números sueltos)
             if len(autor) < 2:
                 continue
 
@@ -153,7 +139,6 @@ def extract_citations(text: str) -> list[dict]:
                 }
             )
 
-    # ----- Citas narrativas: Autor (2020) / Autor y Autor (2020) / Autor et al. (2020) -----
     narrative = re.findall(
         r"\b([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúüñ'-]{1,}"
         r"(?:\s+(?:y|e|&|and)\s+[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúüñ'-]{1,})?"
@@ -172,7 +157,6 @@ def extract_citations(text: str) -> list[dict]:
             }
         )
 
-    # Eliminar duplicados por (apellido, año)
     unique = []
     seen = set()
     for citation in citations:
@@ -194,7 +178,6 @@ def extract_reference_entries(reference_paragraphs: list) -> list[dict]:
         year_match = re.search(r"\b((?:19|20)\d{2}[a-z]?)\b", text)
         anio_str = year_match.group(1) if year_match else ""
 
-        # Intentar sacar el autor (antes de la primera coma o del año)
         if "," in text:
             author = text.split(",", 1)[0].strip()
         else:
@@ -208,10 +191,7 @@ def extract_reference_entries(reference_paragraphs: list) -> list[dict]:
                 "surname": first_author_surname(author),
             }
         )
-    return entries
-
-
-def analyze_document(data: bytes, filename: str = "") -> dict:
+    return entriesdef analyze_document(data: bytes, filename: str = "") -> dict:
     if not filename.lower().endswith(".docx"):
         raise ValueError("La aplicación está optimizada exclusivamente para archivos .docx.")
 
@@ -242,7 +222,9 @@ def analyze_document(data: bytes, filename: str = "") -> dict:
             ("Derecho", right_cm),
         ]:
             if value is None or abs(value - 2.54) > 0.1:
-                margin_errors.append(f"{name} ({value} cm)" if value is not None else f"{name} (no definido)")
+                margin_errors.append(
+                    f"{name} ({value} cm)" if value is not None else f"{name} (no definido)"
+                )
 
         if not margin_errors:
             checks.append(
@@ -348,9 +330,7 @@ def analyze_document(data: bytes, filename: str = "") -> dict:
             else "No se detectó el campo de numeración de páginas en el encabezado.",
             "Añade el número de página alineado a la derecha en el encabezado superior.",
         )
-    )
-
-    # 6. Sección de referencias
+    )# 6. Sección de referencias
     if reference_start is None:
         checks.append(
             Check(
@@ -468,11 +448,7 @@ def analyze_document(data: bytes, filename: str = "") -> dict:
         "ok_count": sum(c.status == "ok" for c in checks),
         "issue_count": sum(c.status != "ok" for c in checks),
         "is_pdf": False,
-    }
-
-
-def set_run_font(run, name: str = "Times New Roman", size: int = 12) -> None:
-    """Aplica fuente de forma más compatible con Word."""
+    }def set_run_font(run, name: str = "Times New Roman", size: int = 12) -> None:
     run.font.name = name
     run.font.size = Pt(size)
     r_pr = run._element.get_or_add_rPr()
@@ -566,7 +542,6 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
         paragraph.paragraph_format.space_after = Pt(0)
 
         for run in paragraph.runs:
-            # Solo forzamos fuente si no tiene una definida o es muy rara
             if not run.font.name or run.font.name not in {
                 "Times New Roman", "Arial", "Calibri", "Georgia", "Lucida Sans Unicode"
             }:
@@ -577,7 +552,7 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
         is_heading = (
             (paragraph.style and paragraph.style.name and paragraph.style.name.lower().startswith("heading"))
             or text.lower()
-    in {
+            in {
                 "resumen",
                 "abstract",
                 "introducción",
@@ -598,16 +573,14 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
             continue
 
         if reference_mode:
-            # Sangría francesa
             paragraph.paragraph_format.left_indent = Inches(0.5)
             paragraph.paragraph_format.first_line_indent = Inches(-0.5)
         else:
             paragraph.paragraph_format.left_indent = Inches(0)
-            paragraph.paragraph_format.first_line_indent = Inches(0.5)
-
-    # Si no existía sección de referencias, la creamos
+            paragraph.paragraph_format.first_line_indent = Inches(0.5)# Si no existía sección de referencias, la creamos
     if reference_start is None:
-document.add_page_break()
+        document.add_page_break()
+
         ref_heading = document.add_paragraph()
         ref_heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = ref_heading.add_run("Referencias")
@@ -648,3 +621,5 @@ document.add_page_break()
             set_run_font(run_empty)
 
     output = io.BytesIO()
+    document.save(output)
+    return output.getvalue()
