@@ -1,22 +1,32 @@
-"""
-Servidor FastAPI para RevisorAPA (Solo .docx)
-"""
+"""Servidor FastAPI para RevisorAPA."""
 
-import os
+from __future__ import annotations
+
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, Response, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from app.apa_logic import analyze_document, correct_document
 
-app = FastAPI(title="RevisorAPA", version="2.0.0")
 
-# CORS más seguro para desarrollo local
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+MAX_FILE_SIZE = 10 * 1024 * 1024
+DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+app = FastAPI(
+    title="RevisorAPA",
+    version="2.1.0",
+    description="Revisión automática de formato APA 7 para documentos DOCX.",
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -26,76 +36,99 @@ app.add_middleware(
         "http://127.0.0.1:3000",
     ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
-# Raíz del proyecto (un nivel arriba de la carpeta "app")
 CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parent
-
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
 STATIC_DIR = PROJECT_ROOT / "static"
 
-# Crear carpeta static si no existe
-STATIC_DIR.mkdir(parents=True, exist_ok=True)
+if not TEMPLATES_DIR.exists():
+    raise RuntimeError(f"No existe la carpeta de plantillas: {TEMPLATES_DIR}")
 
-# Montar archivos estáticos
-if STATIC_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+if not STATIC_DIR.exists():
+    raise RuntimeError(f"No existe la carpeta de archivos estáticos: {STATIC_DIR}")
 
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+async def read_docx_upload(file: UploadFile) -> tuple[bytes, str]:
+    filename = file.filename or ""
+
+    if not filename.lower().endswith(".docx"):
+        raise HTTPException(
+            status_code=400,
+            detail="Solo se admiten archivos con extensión .docx.",
+        )
+
+    data = await file.read(MAX_FILE_SIZE + 1)
+
+    if not data:
+        raise HTTPException(status_code=400, detail="El archivo está vacío.")
+
+    if len(data) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="El archivo no puede superar los 10 MB.",
+        )
+
+    return data, filename
 
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
-    index_path = TEMPLATES_DIR / "index.html"
-    if not index_path.exists():
-        return HTMLResponse(
-            f"<h3>Error de configuración</h3>"
-            f"<p>No se encontró <code>index.html</code> en la ruta: <code>{TEMPLATES_DIR}</code>.</p>"
-            f"<p>Asegúrate de que la carpeta <strong>templates</strong> que contiene <strong>index.html</strong> esté en la raíz del proyecto.</p>",
-            status_code=500,
-        )
     return templates.TemplateResponse("index.html", {"request": request})
 
 
 @app.get("/health")
 async def health_check():
-    return JSONResponse({"status": "ok", "service": "RevisorAPA", "version": "2.0.0"})
+    return JSONResponse({
+        "status": "ok",
+        "service": "RevisorAPA",
+        "version": "2.1.0",
+    })
 
 
 @app.post("/api/analyze")
 async def api_analyze(file: UploadFile = File(...)):
-    if not (file.filename or "").lower().endswith(".docx"):
-        raise HTTPException(status_code=400, detail="¡Solo se admite formato .docx! ⚠️")
-
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="El archivo está vacío.")
+    data, filename = await read_docx_upload(file)
 
     try:
-        return analyze_document(data, file.filename or "")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al analizar el documento: {str(e)}")
+        return analyze_document(data, filename)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        logger.exception("Error al analizar el documento %s", filename)
+        raise HTTPException(
+            status_code=400,
+            detail="El archivo no es un documento DOCX válido o está dañado.",
+        ) from error
 
 
 @app.post("/api/correct")
 async def api_correct(file: UploadFile = File(...)):
-    if not (file.filename or "").lower().endswith(".docx"):
-        raise HTTPException(status_code=400, detail="¡Solo se admite formato .docx! ⚠️")
-
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="El archivo está vacío.")
+    data, filename = await read_docx_upload(file)
 
     try:
-        corrected = correct_document(data, file.filename or "")
-        out_name = f"{Path(file.filename or 'doc').stem}_APA7_Corregido.docx"
-        return Response(
-            content=corrected,
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f'attachment; filename="{out_name}"'},
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al corregir el documento: {str(e)}")
+        corrected = correct_document(data, filename)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        logger.exception("Error al corregir el documento %s", filename)
+        raise HTTPException(
+            status_code=400,
+            detail="No fue posible generar el documento corregido. Verifica que el DOCX sea válido.",
+        ) from error
+
+    output_name = f"{Path(filename).stem}_APA7_Corregido.docx"
+    return Response(
+        content=corrected,
+        media_type=DOCX_MEDIA_TYPE,
+        headers={
+            "Content-Disposition": f'attachment; filename="{output_name}"',
+            "Content-Length": str(len(corrected)),
+        },
+)
