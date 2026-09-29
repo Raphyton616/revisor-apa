@@ -1,275 +1,413 @@
-document.addEventListener("DOMContentLoaded", () => {
-  const overlay = document.getElementById("upload-overlay");
-  const dropZone = document.getElementById("drop-zone");
-  const fileInput = document.getElementById("file-input");
-  const uploadError = document.getElementById("upload-error");
-  const uploadLoading = document.getElementById("upload-loading");
-  const analysisContainer = document.getElementById("analysis-container");
-  const btnOpenUpload = document.getElementById("btn-open-upload");
-  const btnCloseModal = document.getElementById("btn-close-modal");
+:root {
+  --paper: #f6eddc;
+  --paper-light: #fffaf0;
+  --ink: #2e241b;
+  --ink-soft: #756553;
+  --gold: #a8752b;
+  --gold-dark: #76501f;
+  --border: #d7c3a0;
+  --green: #2f7657;
+  --green-light: #e3f1e8;
+  --yellow: #9a6a18;
+  --yellow-light: #fff3d1;
+  --red: #a13d35;
+  --red-light: #f8e3df;
+  --shadow: 0 18px 45px rgba(72, 48, 22, 0.16);
+}
 
-  let currentFile = null;
+* {
+  box-sizing: border-box;
+}
 
-  function showOverlay() {
-    overlay.classList.remove("closed");
+html {
+  min-height: 100%;
+  background: #e8dac1;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 20% 10%, rgba(255, 255, 255, 0.55), transparent 28rem),
+    linear-gradient(135deg, #efe3cd, #dfc9a5);
+  font-family: "Libre Baskerville", Georgia, serif;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.app-header {
+  width: min(1120px, calc(100% - 32px));
+  margin: 24px auto 0;
+  padding: 18px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 250, 240, 0.92);
+  box-shadow: var(--shadow);
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-icon {
+  font-size: 2rem;
+}
+
+.header-brand h1 {
+  margin: 0;
+  color: var(--gold-dark);
+  font-family: Cinzel, Georgia, serif;
+  font-size: clamp(1.35rem, 3vw, 2rem);
+  letter-spacing: 0.03em;
+}
+
+.btn-primary,
+.btn-secondary {
+  border: 1px solid var(--gold-dark);
+  border-radius: 8px;
+  padding: 11px 17px;
+  font-weight: 700;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.btn-primary {
+  color: #fffaf0;
+  background: var(--gold-dark);
+}
+
+.btn-secondary {
+  color: var(--gold-dark);
+  background: transparent;
+}
+
+.btn-primary:hover,
+.btn-secondary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(90, 56, 18, 0.2);
+}
+
+.upload-overlay {
+  position: fixed;
+  z-index: 10;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(43, 29, 17, 0.54);
+}
+
+.upload-overlay.closed {
+  display: none;
+}
+
+.upload-modal {
+  position: relative;
+  width: min(660px, 100%);
+  padding: clamp(24px, 5vw, 48px);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--paper-light);
+  box-shadow: 0 24px 70px rgba(38, 24, 12, 0.3);
+}
+
+.close-modal {
+  position: absolute;
+  top: 12px;
+  right: 15px;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--ink);
+  background: transparent;
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+.close-modal:hover {
+  background: var(--paper);
+}
+
+.modal-header {
+  text-align: center;
+}
+
+.modal-kicker {
+  color: var(--gold);
+  font-family: Cinzel, Georgia, serif;
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.modal-header h2 {
+  margin: 12px 0 10px;
+  color: var(--gold-dark);
+  font-family: Cinzel, Georgia, serif;
+  font-size: clamp(1.55rem, 5vw, 2.35rem);
+}
+
+.modal-header p {
+  margin: 0 auto 26px;
+  max-width: 520px;
+  color: var(--ink-soft);
+  line-height: 1.65;
+}
+
+.drop-zone {
+  padding: 34px 22px;
+  border: 2px dashed var(--gold);
+  border-radius: 12px;
+  text-align: center;
+  background: var(--paper);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.drop-zone:hover,
+.drop-zone.dragover {
+  border-color: var(--gold-dark);
+  background: #f1dfbc;
+}
+
+.drop-zone-icon {
+  font-size: 2.8rem;
+}
+
+.drop-zone-text {
+  margin: 14px 0 8px;
+  line-height: 1.55;
+}
+
+.drop-zone-hint {
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+}
+
+.upload-error {
+  margin-top: 18px;
+  padding: 12px 14px;
+  border: 1px solid #d18a83;
+  border-radius: 8px;
+  color: var(--red);
+  background: var(--red-light);
+  line-height: 1.5;
+}
+
+.upload-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 20px;
+  color: var(--ink-soft);
+}
+
+.spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid var(--border);
+  border-top-color: var(--gold-dark);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.analysis-container {
+  width: min(1120px, calc(100% - 32px));
+  margin: 26px auto 48px;
+  padding: clamp(20px, 4vw, 42px);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 250, 240, 0.94);
+  box-shadow: var(--shadow);
+}
+
+.results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.results-header h2 {
+  margin: 0 0 8px;
+  color: var(--gold-dark);
+  font-family: Cinzel, Georgia, serif;
+}
+
+.document-name {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin: 24px 0 34px;
+}
+
+.metric-card {
+  padding: 18px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  text-align: center;
+  background: var(--paper);
+}
+
+.metric-card .value {
+  color: var(--gold-dark);
+  font-family: Cinzel, Georgia, serif;
+  font-size: 1.8rem;
+  font-weight: 700;
+}
+
+.metric-card .label {
+  margin-top: 5px;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
+.check-section {
+  margin-top: 28px;
+}
+
+.check-section h3 {
+  margin: 0 0 12px;
+  color: var(--gold-dark);
+  font-family: Cinzel, Georgia, serif;
+}
+
+.check-card {
+  display: flex;
+  gap: 13px;
+  margin: 10px 0;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--green);
+  border-radius: 9px;
+  background: var(--green-light);
+}
+
+.check-warning {
+  border-left-color: var(--yellow);
+  background: var(--yellow-light);
+}
+
+.check-error {
+  border-left-color: var(--red);
+  background: var(--red-light);
+}
+
+.check-icon {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: white;
+  background: var(--green);
+  font-weight: 700;
+}
+
+.check-warning .check-icon {
+  background: var(--yellow);
+}
+
+.check-error .check-icon {
+  background: var(--red);
+}
+
+.check-title {
+  font-weight: 700;
+}
+
+.check-detail,
+.check-recommendation {
+  margin-top: 6px;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.check-recommendation {
+  color: var(--gold-dark);
+  font-weight: 700;
+}
+
+.detail-list {
+  margin: 9px 0 0;
+  padding-left: 20px;
+  line-height: 1.7;
+}
+
+@media (max-width: 700px) {
+  .app-header {
+    align-items: flex-start;
+    flex-direction: column;
+    margin-top: 12px;
   }
 
-  function hideOverlay() {
-    overlay.classList.add("closed");
+  .app-header .btn-secondary {
+    width: 100%;
   }
 
-  btnOpenUpload.addEventListener("click", showOverlay);
-  btnCloseModal.addEventListener("click", hideOverlay);
-
-  // Drag and Drop
-  dropZone.addEventListener("click", () => fileInput.click());
-
-  dropZone.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    dropZone.classList.add("dragover");
-  });
-
-  dropZone.addEventListener("dragleave", () => {
-    dropZone.classList.remove("dragover");
-  });
-
-  dropZone.addEventListener("drop", (e) => {
-    e.preventDefault();
-    dropZone.classList.remove("dragover");
-    if (e.dataTransfer.files.length) {
-      handleFile(e.dataTransfer.files[0]);
-    }
-  });
-
-  fileInput.addEventListener("change", () => {
-    if (fileInput.files.length) {
-      handleFile(fileInput.files[0]);
-    }
-  });
-
-  function showError(msg) {
-    uploadError.textContent = msg;
-    uploadError.classList.remove("hidden");
+  .results-header {
+    align-items: stretch;
+    flex-direction: column;
   }
 
-  function clearError() {
-    uploadError.textContent = "";
-    uploadError.classList.add("hidden");
+  .results-header .btn-primary {
+    width: 100%;
   }
 
-  async function handleFile(file) {
-    clearError();
-
-    if (!file.name.toLowerCase().endsWith(".docx")) {
-      showError("¡Solo se admite formato .docx! ⚠️");
-      return;
-    }
-
-    currentFile = file;
-    uploadLoading.classList.remove("hidden");
-
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.detail || "Error al procesar el archivo.");
-      }
-
-      renderAnalysis(data);
-      uploadLoading.classList.add("hidden");
-      hideOverlay();
-    } catch (err) {
-      uploadLoading.classList.add("hidden");
-      showError(err.message);
-    }
+  .metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 
-  function renderAnalysis(data) {
-    analysisContainer.classList.remove("hidden");
-    analysisContainer.innerHTML = "";
-
-    // Header del Análisis
-    const headerHtml = `
-      <div class="results-header">
-        <div>
-          <h2>Informe de Verificación APA 7</h2>
-          <p style="color: var(--ink-soft); font-size: 0.9rem;">
-            Documento: <strong>${escapeHtml(currentFile.name)}</strong>
-          </p>
-        </div>
-        <button id="btn-correct-doc" class="btn-primary">✨ Corregir documento</button>
-      </div>
-    `;
-
-    // Métricas
-    const metricsHtml = `
-      <div class="metrics-grid">
-        <div class="metric-card">
-          <div class="value">${data.ok_count}</div>
-          <div class="label">Correctos</div>
-        </div>
-        <div class="metric-card">
-          <div class="value">${data.issue_count}</div>
-          <div class="label">Para revisar</div>
-        </div>
-        <div class="metric-card">
-          <div class="value">${data.word_count.toLocaleString()}</div>
-          <div class="label">Palabras</div>
-        </div>
-        <div class="metric-card">
-          <div class="value">${data.reference_count}</div>
-          <div class="label">Referencias</div>
-        </div>
-      </div>
-    `;
-
-    // Categorías de checks
-    const categories = ["Formato", "Citas", "Referencias"];
-    let checksHtml = "";
-
-    categories.forEach((cat) => {
-      const categoryChecks = data.checks.filter((c) => c.category === cat);
-      if (categoryChecks.length === 0) return;
-
-      checksHtml += `<div class="check-section"><h3>${escapeHtml(cat)}</h3>`;
-
-      categoryChecks.forEach((c) => {
-        const iconMap = { ok: "✓", warning: "!", error: "×" };
-        const recommendationHtml =
-          c.recommendation && c.status !== "ok"
-            ? `<div class="check-recommendation">Recomendación: ${escapeHtml(c.recommendation)}</div>`
-            : "";
-
-        checksHtml += `
-          <div class="check-card check-${c.status}">
-            <div class="check-icon">${iconMap[c.status] || "!"}</div>
-            <div>
-              <div class="check-title">${escapeHtml(c.title)}</div>
-              <div class="check-detail">${escapeHtml(c.detail)}</div>
-              ${recommendationHtml}
-            </div>
-          </div>
-        `;
-      });
-
-      checksHtml += `</div>`;
-    });
-
-    // ----- NUEVO: Citas sin referencia -----
-    let missingRefsHtml = "";
-    if (data.citations_without_reference && data.citations_without_reference.length > 0) {
-      const items = data.citations_without_reference
-        .map(
-          (c) =>
-            `<li><strong>\( {escapeHtml(c.autor)}</strong> ( \){escapeHtml(c.anio)}) — <em>${escapeHtml(c.tipo)}</em></li>`
-        )
-        .join("");
-
-      missingRefsHtml = `
-        <div class="check-section">
-          <h3>Citas sin referencia coincidente</h3>
-          <div class="check-card check-warning">
-            <div class="check-icon">!</div>
-            <div>
-              <div class="check-title">Estas citas no tienen entrada en la lista de referencias</div>
-              <ul class="detail-list">
-                ${items}
-              </ul>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    // ----- NUEVO: Referencias no citadas -----
-    let uncitedHtml = "";
-    if (data.uncited_references && data.uncited_references.length > 0) {
-      const items = data.uncited_references
-        .map(
-          (r) =>
-            `<li><strong>\( {escapeHtml(r.autor)}</strong> \){r.anio ? ` (${escapeHtml(r.anio)})` : ""}</li>`
-        )
-        .join("");
-
-      uncitedHtml = `
-        <div class="check-section">
-          <h3>Referencias no citadas en el texto</h3>
-          <div class="check-card check-warning">
-            <div class="check-icon">!</div>
-            <div>
-              <div class="check-title">Estas entradas aparecen en Referencias pero no se citaron</div>
-              <ul class="detail-list">
-                ${items}
-              </ul>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    analysisContainer.innerHTML =
-      headerHtml + metricsHtml + checksHtml + missingRefsHtml + uncitedHtml;
-
-    document
-      .getElementById("btn-correct-doc")
-      .addEventListener("click", downloadCorrectedDocument);
+  .upload-overlay {
+    padding: 12px;
   }
 
-  async function downloadCorrectedDocument() {
-    if (!currentFile) return;
-
-    const btn = document.getElementById("btn-correct-doc");
-    btn.disabled = true;
-    btn.textContent = "Generando archivo...";
-
-    const formData = new FormData();
-    formData.append("file", currentFile);
-
-    try {
-      const response = await fetch("/api/correct", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.detail || "No se pudo generar la versión corregida.");
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = currentFile.name.replace(/\.docx$/i, "") + "_APA7_Corregido.docx";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-
-      btn.disabled = false;
-      btn.textContent = "✨ Corregir documento";
-    } catch (err) {
-      alert("Error: " + err.message);
-      btn.disabled = false;
-      btn.textContent = "✨ Corregir documento";
-    }
+  .upload-modal {
+    max-height: 94vh;
+    overflow-y: auto;
+    padding: 28px 18px 22px;
   }
+}
 
-  function escapeHtml(str) {
-    if (typeof str !== "string") return "";
-    return str
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
+@media (max-width: 380px) {
+  .metrics-grid {
+    grid-template-columns: 1fr;
   }
-});
+             }
