@@ -23,7 +23,7 @@ ALLOWED_FONTS = {
 
 HEADING_WORDS = {
     "resumen", "abstract", "introducción", "introduccion", "método", "metodo",
-    "resultados", "discusión", "discusion", "conclusión", "conclusion",
+    "resultados", "desarrollo", "discusión", "discusion", "conclusión", "conclusion",
 }
 
 
@@ -375,10 +375,15 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
         paragraph.paragraph_format.space_after = Pt(0)
         for run in paragraph.runs:
             set_run_font(run)
+        is_title = index == 0
         is_heading = text.lower() in HEADING_WORDS or (
             paragraph.style and paragraph.style.name and paragraph.style.name.lower().startswith("heading")
         )
-        if is_heading:
+        if is_title:
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            paragraph.paragraph_format.first_line_indent = Inches(0)
+            paragraph.paragraph_format.left_indent = Inches(0)
+        elif is_heading:
             paragraph.paragraph_format.first_line_indent = Inches(0)
             paragraph.paragraph_format.left_indent = Inches(0)
         elif reference_mode:
