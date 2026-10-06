@@ -466,6 +466,69 @@ def _structure_checks(body: list, reference_start: int | None) -> list[Check]:
     return checks
 
 
+def _visual_checks(document: Document, body: list) -> list[Check]:
+    """Revisa tablas y figuras con señales estructurales, no con juicio visual absoluto."""
+    tables = list(document.tables)
+    figures = list(getattr(document, "inline_shapes", []))
+    all_text = "\n".join(p.text.strip() for p in non_empty_paragraphs(document))
+    table_labels = re.findall(r"\btabla\s+(\d+)\b", all_text, re.IGNORECASE)
+    figure_labels = re.findall(r"\bfigura\s+(\d+)\b", all_text, re.IGNORECASE)
+    checks = []
+
+    if tables:
+        missing_titles = len(tables) - len(table_labels)
+        checks.append(Check(
+            "Tablas y figuras", "Tablas identificadas", "ok",
+            f"Se detectaron {len(tables)} tabla(s) en el documento.", "", "Alta",
+        ))
+        checks.append(Check(
+            "Tablas y figuras", "Numeración y título de tablas", "warning" if missing_titles > 0 else "ok",
+            f"{missing_titles} tabla(s) no están acompañadas por un rótulo reconocible como «Tabla 1» o similar." if missing_titles > 0 else
+            "Cada tabla detectada tiene un rótulo numerado reconocible.",
+            "Añade encima de cada tabla su número y título descriptivo." if missing_titles > 0 else "",
+            "Media" if missing_titles > 0 else "Alta",
+        ))
+        body_without_captions = "\n".join(
+            p.text for p in body
+            if not re.match(r"^\s*tabla\s+\d+\s*[.:]", p.text, re.IGNORECASE)
+        )
+        mentions = re.findall(r"\btabla\s+\d+\b", body_without_captions, re.IGNORECASE)
+        checks.append(Check(
+            "Tablas y figuras", "Menciones de tablas en el texto", "warning" if not mentions else "ok",
+            "No se detectaron menciones a tablas dentro del cuerpo del texto." if not mentions else
+            f"Se detectaron {len(mentions)} mención(es) a tabla(s) dentro del cuerpo.",
+            "Menciona cada tabla en el texto antes o después de presentarla." if not mentions else "",
+            "Media" if not mentions else "Alta",
+        ))
+
+    if figures:
+        missing_titles = len(figures) - len(figure_labels)
+        checks.append(Check(
+            "Tablas y figuras", "Figuras identificadas", "ok",
+            f"Se detectaron {len(figures)} figura(s) o imagen(es) insertada(s).", "", "Alta",
+        ))
+        checks.append(Check(
+            "Tablas y figuras", "Numeración y título de figuras", "warning" if missing_titles > 0 else "ok",
+            f"{missing_titles} figura(s) no están acompañadas por un rótulo reconocible como «Figura 1» o similar." if missing_titles > 0 else
+            "Cada figura detectada tiene un rótulo numerado reconocible.",
+            "Añade debajo de cada figura su número y título descriptivo." if missing_titles > 0 else "",
+            "Media" if missing_titles > 0 else "Alta",
+        ))
+        body_without_captions = "\n".join(
+            p.text for p in body
+            if not re.match(r"^\s*figura\s+\d+\s*[.:]", p.text, re.IGNORECASE)
+        )
+        mentions = re.findall(r"\bfigura\s+\d+\b", body_without_captions, re.IGNORECASE)
+        checks.append(Check(
+            "Tablas y figuras", "Menciones de figuras en el texto", "warning" if not mentions else "ok",
+            "No se detectaron menciones a figuras dentro del cuerpo del texto." if not mentions else
+            f"Se detectaron {len(mentions)} mención(es) a figura(s) dentro del cuerpo.",
+            "Menciona cada figura en el texto antes o después de presentarla." if not mentions else "",
+            "Media" if not mentions else "Alta",
+        ))
+    return checks
+
+
 def analyze_document(data: bytes, filename: str = "", instructions_text: str = "") -> dict:
     if not filename.lower().endswith(".docx"):
         raise ValueError("La aplicación está optimizada exclusivamente para archivos .docx.")
@@ -477,6 +540,7 @@ def analyze_document(data: bytes, filename: str = "", instructions_text: str = "
     reference_paragraphs = paragraphs[reference_start + 1:] if reference_start is not None else []
     checks = _check_format(document, body, paragraphs)
     checks.extend(_structure_checks(body, reference_start))
+    checks.extend(_visual_checks(document, body))
     custom_rules = parse_instructions(instructions_text)
     custom_checks = check_custom_instructions(document, custom_rules)
     checks.extend(Check(**item) for item in custom_checks)
