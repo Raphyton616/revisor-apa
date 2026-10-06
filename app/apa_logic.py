@@ -13,6 +13,8 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 
+from app.instructions import apply_custom_corrections, check_custom_instructions, parse_instructions
+
 ALLOWED_FONTS = {
     ("Times New Roman", 12.0),
     ("Arial", 11.0),
@@ -106,60 +108,111 @@ def find_reference_start(paragraphs: list) -> tuple[int | None, str]:
 
 
 def first_author_surname(author: str) -> str:
+    """Devuelve una clave comparable para enlazar citas y referencias."""
     if not isinstance(author, str):
         return ""
     cleaned = re.sub(r"\bet\s+al\.?\b", "", author, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+\[.*?\]", "", cleaned)
     cleaned = re.split(r"\s+(?:y|e|and|&)\s+", cleaned, maxsplit=1, flags=re.IGNORECASE)[0]
     cleaned = cleaned.split(",", 1)[0].strip().lower()
     return re.sub(r"[^a-záéíóúüñ0-9 -]", "", cleaned).strip()
 
 
+def _citation_key(author: str, year: str) -> tuple[str, str]:
+    return first_author_surname(author), str(year).lower().strip()
+
+
+def _split_parenthetical_parts(group: str) -> list[str]:
+    """Separa varias fuentes en una cita parentética sin romper años 2020a."""
+    parts = re.split(r"\s*;\s*", group)
+    result = []
+    for part in parts:
+        part = part.strip()
+        if re.search(r"\b(?:19|20)\d{2}[a-z]?\b", part, re.IGNORECASE):
+            result.append(part)
+    return result
+
+
 def extract_citations(text: str) -> list[dict]:
     citations = []
-    parenthetical = re.findall(r"\(([^()]{2,240}?\b(?:19|20)\d{2}[a-z]?[^()]*)\)", text)
-    for group in parenthetical:
-        for part in re.split(r"\s*;\s*", group):
+
+    # Citas parentéticas: (García, 2020), (García & López, 2020, p. 15), etc.
+    parenthetical_groups = re.findall(
+        r"\(([^()]{2,260}?\b(?:19|20)\d{2}[a-z]?[^()]*)\)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    for group in parenthetical_groups:
+        for part in _split_parenthetical_parts(group):
             match = re.search(
-                r"(?P<autor>[A-ZÁÉÍÓÚÑ][^,;()]{1,100}?),\s*"
+                r"(?P<autor>[A-ZÁÉÍÓÚÑ][^,;()]{1,120}?),\s*"
                 r"(?P<anio>(?:19|20)\d{2}[a-z]?)\b",
                 part,
                 flags=re.IGNORECASE,
             )
-            if match:
-                citations.append({
-                    "autor": match.group("autor").strip(),
-                    "anio": match.group("anio").strip(),
-                    "tipo": "parentética",
-                    "texto": f"({part.strip()})",
-                })
+            if not match:
+                continue
+            author = match.group("autor").strip()
+            year = match.group("anio").strip()
+            citations.append({
+                "autor": author,
+                "anio": year,
+                "tipo": "parentética",
+                "texto": f"({part})",
+                "pagina": _extract_page(part),
+                "clave": _citation_key(author, year),
+            })
 
-    narrative = re.findall(
-        r"\b([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúüñ'’-]{1,}"
+    # Citas narrativas: García (2020), García y López (2020), García et al. (2020).
+    narrative = re.finditer(
+        r"\b(?P<autor>[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúüñ'’-]{1,}"
         r"(?:\s+(?:y|e|&|and)\s+[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúüñ'’-]{1,})?"
-        r"(?:\s+et\s+al\.?)?)\s+\(((?:19|20)\d{2}[a-z]?)\)",
+        r"(?:\s+et\s+al\.?)?)\s+"
+        r"\((?P<anio>(?:19|20)\d{2}[a-z]?)\)",
         text,
+        flags=re.IGNORECASE,
     )
-    for autor, anio in narrative:
+    for match in narrative:
+        author = match.group("autor").strip()
+        year = match.group("anio").strip()
         citations.append({
-            "autor": autor.strip(),
-            "anio": anio.strip(),
+            "autor": author,
+            "anio": year,
             "tipo": "narrativa",
-            "texto": f"{autor.strip()} ({anio})",
+            "texto": match.group(0),
+            "pagina": "",
+            "clave": _citation_key(author, year),
         })
 
     unique = []
     seen = set()
     for citation in citations:
-        key = (first_author_surname(citation["autor"]), citation["anio"])
+        key = citation["clave"]
         if key[0] and key not in seen:
             seen.add(key)
             unique.append(citation)
     return unique
 
 
+def _extract_page(text: str) -> str:
+    match = re.search(r"\b(?:p|pp)\.\s*([\d-]+)", text, flags=re.IGNORECASE)
+    return match.group(1) if match else ""
+
+
+def _reference_type(text: str) -> str:
+    lowered = text.lower()
+    if "doi.org/" in lowered or "doi:" in lowered:
+        return "con DOI"
+    if "http://" in lowered or "https://" in lowered:
+        return "con URL"
+    if re.search(r"\b\d+\s*\(\s*\d+\s*\)", text):
+        return "artículo de revista"
+    return "referencia general"
+
+
 def extract_reference_entries(paragraphs: list) -> list[dict]:
     entries = []
-    for paragraph in paragraphs:
+    for index, paragraph in enumerate(paragraphs, start=1):
         text = paragraph.text.strip()
         if not text:
             continue
@@ -167,13 +220,17 @@ def extract_reference_entries(paragraphs: list) -> list[dict]:
         year = year_match.group(1) if year_match else ""
         author = text.split(",", 1)[0].strip() if "," in text else text.split(".", 1)[0].strip()
         entries.append({
+            "numero": index,
             "autor": author,
             "anio": year,
             "texto": text,
             "surname": first_author_surname(author),
+            "clave": _citation_key(author, year),
+            "tipo": _reference_type(text),
+            "tiene_doi": bool(re.search(r"(?:doi\.org/|doi:)\S+", text, re.IGNORECASE)),
+            "tiene_url": bool(re.search(r"https?://\S+", text, re.IGNORECASE)),
         })
     return entries
-
 
 def _check_format(document: Document, body: list, all_paragraphs: list) -> list[Check]:
     checks = []
@@ -244,47 +301,87 @@ def _check_format(document: Document, body: list, all_paragraphs: list) -> list[
     return checks
 
 
-def analyze_document(data: bytes, filename: str = "") -> dict:
+def analyze_document(data: bytes, filename: str = "", instructions_text: str = "") -> dict:
     if not filename.lower().endswith(".docx"):
         raise ValueError("La aplicación está optimizada exclusivamente para archivos .docx.")
+
     document = Document(io.BytesIO(data))
     paragraphs = non_empty_paragraphs(document)
     reference_start, heading = find_reference_start(paragraphs)
     body = paragraphs[:reference_start] if reference_start is not None else paragraphs
     reference_paragraphs = paragraphs[reference_start + 1:] if reference_start is not None else []
     checks = _check_format(document, body, paragraphs)
+    custom_rules = parse_instructions(instructions_text)
+    custom_checks = check_custom_instructions(document, custom_rules)
+    checks.extend(Check(**item) for item in custom_checks)
 
     if reference_start is None:
-        checks.append(Check("Referencias", "Sección de referencias", "error",
+        checks.append(Check(
+            "Referencias", "Sección de referencias", "error",
             "No se encontró un encabezado independiente de Referencias.",
-            "Crea una página final titulada exactamente «Referencias»."))
+            "Crea una página final titulada exactamente «Referencias».",
+        ))
     else:
         good_heading = heading.strip().lower() == "referencias"
-        checks.append(Check("Referencias", "Sección de referencias", "ok" if good_heading else "warning",
+        checks.append(Check(
+            "Referencias", "Sección de referencias", "ok" if good_heading else "warning",
             "Se encontró la sección «Referencias»." if good_heading else f"Se detectó el título «{heading}».",
-            "En APA 7, usa exactamente el título «Referencias»." if not good_heading else ""))
+            "En APA 7, usa exactamente el título «Referencias»." if not good_heading else "",
+        ))
 
     full_text = "\n".join(p.text for p in body)
     citations = extract_citations(full_text)
     references = extract_reference_entries(reference_paragraphs)
-    citation_keys = {(first_author_surname(c["autor"]), c["anio"]) for c in citations}
-    reference_keys = {(r["surname"], r["anio"]) for r in references}
-    missing = [c for c in citations if (first_author_surname(c["autor"]), c["anio"]) not in reference_keys]
-    uncited = [r for r in references if not r["anio"] or (r["surname"], r["anio"]) not in citation_keys]
+    citation_keys = {c["clave"] for c in citations}
+    reference_keys = {r["clave"] for r in references if r["surname"]}
+    missing = [c for c in citations if c["clave"] not in reference_keys]
+    uncited = [r for r in references if not r["anio"] or r["clave"] not in citation_keys]
 
-    checks.append(Check("Citas", "Citas dentro del texto", "ok" if citations else "warning",
+    checks.append(Check(
+        "Citas", "Citas dentro del texto", "ok" if citations else "warning",
         f"Se detectaron {len(citations)} cita(s) con patrón autor-año." if citations else
         "No se detectaron patrones claros de cita autor-año.",
-        "Revisa que las afirmaciones tomadas de fuentes externas tengan su cita." if not citations else ""))
-    if reference_start is not None:
-        checks.append(Check("Citas", "Correspondencia citas-referencias", "ok" if not missing else "warning",
-            "Todas las citas detectadas tienen una referencia coincidente." if not missing else
-            f"Hay {len(missing)} cita(s) sin referencia coincidente.",
-            "Verifica cada cita contra la lista de referencias." if missing else ""))
-    checks.append(Check("Referencias", "Entradas bibliográficas", "ok" if references else "warning",
+        "Revisa que las afirmaciones tomadas de fuentes externas tengan su cita." if not citations else "",
+    ))
+    checks.append(Check(
+        "Citas", "Correspondencia citas-referencias", "ok" if not missing and reference_start is not None else "warning",
+        "Todas las citas detectadas tienen una referencia coincidente." if not missing and reference_start is not None else
+        f"Hay {len(missing)} cita(s) sin referencia coincidente." if missing else
+        "No se puede comprobar la correspondencia porque falta la sección de referencias.",
+        "Verifica cada cita contra la lista de referencias." if missing or reference_start is None else "",
+    ))
+
+    duplicate_keys = [key for key in {r["clave"] for r in references} if sum(r["clave"] == key for r in references) > 1]
+    checks.append(Check(
+        "Referencias", "Referencias duplicadas", "warning" if duplicate_keys else "ok",
+        f"Se detectaron {len(duplicate_keys)} posible(s) duplicado(s)." if duplicate_keys else
+        "No se detectaron referencias duplicadas por autor y año.",
+        "Revisa y elimina las entradas repetidas." if duplicate_keys else "",
+    ))
+
+    ordered_keys = [r["surname"] for r in references if r["surname"]]
+    is_ordered = ordered_keys == sorted(ordered_keys, key=lambda value: value.casefold())
+    checks.append(Check(
+        "Referencias", "Orden alfabético", "ok" if is_ordered else "warning",
+        "Las referencias parecen estar en orden alfabético." if is_ordered else
+        "Las referencias no parecen estar ordenadas alfabéticamente por autor.",
+        "Ordena la lista de referencias alfabéticamente por el primer autor." if not is_ordered else "",
+    ))
+
+    missing_year = [r for r in references if not r["anio"]]
+    checks.append(Check(
+        "Referencias", "Año de publicación", "warning" if missing_year else "ok",
+        f"{len(missing_year)} referencia(s) no muestran un año reconocible." if missing_year else
+        "Todas las referencias tienen un año reconocible.",
+        "Revisa el año de cada referencia." if missing_year else "",
+    ))
+
+    checks.append(Check(
+        "Referencias", "Entradas bibliográficas", "ok" if references else "warning",
         f"Se detectaron {len(references)} entrada(s) en Referencias." if references else
         "La lista de referencias está vacía o no pudo identificarse.",
-        "Incluye una entrada bibliográfica completa por cada fuente citada." if not references else ""))
+        "Incluye una entrada bibliográfica completa por cada fuente citada." if not references else "",
+    ))
 
     return {
         "checks": [check.to_dict() for check in checks],
@@ -299,8 +396,9 @@ def analyze_document(data: bytes, filename: str = "") -> dict:
         "ok_count": sum(check.status == "ok" for check in checks),
         "issue_count": sum(check.status != "ok" for check in checks),
         "is_pdf": False,
+        "instructions_active": custom_rules.active,
+        "instructions_summary": custom_rules.summary(),
     }
-
 
 def set_run_font(run, name: str = "Times New Roman", size: int = 12) -> None:
     run.font.name = name
@@ -329,10 +427,11 @@ def add_page_number(paragraph) -> None:
     set_run_font(run)
 
 
-def correct_document(data: bytes, filename: str = "") -> bytes:
+def correct_document(data: bytes, filename: str = "", instructions_text: str = "") -> bytes:
     if not filename.lower().endswith(".docx"):
         raise ValueError("Solo se pueden corregir archivos .docx.")
     document = Document(io.BytesIO(data))
+    custom_rules = parse_instructions(instructions_text)
 
     for section in document.sections:
         section.top_margin = Inches(1)
@@ -410,6 +509,7 @@ def correct_document(data: bytes, filename: str = "") -> bytes:
         for run in placeholder.runs:
             set_run_font(run)
 
+    apply_custom_corrections(document, custom_rules)
     output = io.BytesIO()
     document.save(output)
     return output.getvalue()
