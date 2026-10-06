@@ -7,6 +7,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const analysisContainer = document.getElementById("analysis-container");
   const btnOpenUpload = document.getElementById("btn-open-upload");
   const btnCloseModal = document.getElementById("btn-close-modal");
+  const instructionsInput = document.getElementById("instructions-input");
 
   let currentFile = null;
 
@@ -66,6 +67,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("instructions", instructionsInput.value.trim());
 
     try {
       const response = await fetch("/api/analyze", {
@@ -93,7 +95,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const safeNumber = (value) => Number(value || 0).toLocaleString("es-ES");
     const checks = Array.isArray(data.checks) ? data.checks : [];
-    const categories = ["Formato", "Citas", "Referencias"];
+    const categories = ["Formato", "Citas", "Referencias", "Instrucciones"];
     const iconMap = { ok: "✓", warning: "!", error: "×" };
 
     const headerHtml = `
@@ -109,6 +111,11 @@ document.addEventListener("DOMContentLoaded", () => {
         </button>
       </div>
     `;
+
+    const instructionSummary = Array.isArray(data.instructions_summary) ? data.instructions_summary : [];
+    const instructionsHtml = data.instructions_active ? `
+      <div class="active-instructions"><strong>Instrucciones aplicadas a este trabajo:</strong><ul>${instructionSummary.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>
+    ` : "";
 
     const metricsHtml = `
       <div class="metrics-grid">
@@ -210,7 +217,7 @@ document.addEventListener("DOMContentLoaded", () => {
       `
       : "";
 
-    analysisContainer.innerHTML = headerHtml + metricsHtml + checksHtml + missingRefsHtml + uncitedHtml;
+    analysisContainer.innerHTML = headerHtml + instructionsHtml + metricsHtml + checksHtml + missingRefsHtml + uncitedHtml;
 
     document
       .getElementById("btn-correct-doc")
@@ -230,6 +237,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const formData = new FormData();
     formData.append("file", currentFile);
+    formData.append("instructions", instructionsInput.value.trim());
 
     try {
       const response = await fetch("/api/correct", {
