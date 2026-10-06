@@ -95,7 +95,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const safeNumber = (value) => Number(value || 0).toLocaleString("es-ES");
     const checks = Array.isArray(data.checks) ? data.checks : [];
-    const categories = ["Formato", "Estructura", "Citas", "Referencias", "Instrucciones"];
+    const categories = ["Formato", "Estructura", "Tablas y figuras", "Citas", "Referencias", "Instrucciones"];
     const iconMap = { ok: "✓", warning: "!", error: "×" };
 
     const headerHtml = `
