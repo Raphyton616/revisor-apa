@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -93,11 +93,14 @@ async def health_check():
 
 
 @app.post("/api/analyze")
-async def api_analyze(file: UploadFile = File(...)):
+async def api_analyze(
+    file: UploadFile = File(...),
+    instructions: str = Form(""),
+):
     data, filename = await read_docx_upload(file)
 
     try:
-        return analyze_document(data, filename)
+        return analyze_document(data, filename, instructions)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
@@ -109,11 +112,14 @@ async def api_analyze(file: UploadFile = File(...)):
 
 
 @app.post("/api/correct")
-async def api_correct(file: UploadFile = File(...)):
+async def api_correct(
+    file: UploadFile = File(...),
+    instructions: str = Form(""),
+):
     data, filename = await read_docx_upload(file)
 
     try:
-        corrected = correct_document(data, filename)
+        corrected = correct_document(data, filename, instructions)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
@@ -131,4 +137,4 @@ async def api_correct(file: UploadFile = File(...)):
             "Content-Disposition": f'attachment; filename="{output_name}"',
             "Content-Length": str(len(corrected)),
         },
-)
+    )
