@@ -151,13 +151,20 @@ document.addEventListener("DOMContentLoaded", () => {
         const recommendation = check.recommendation && status !== "ok"
           ? `<div class="check-recommendation">Recomendación: ${escapeHtml(check.recommendation)}</div>`
           : "";
+        const auditHtml = `
+          <div class="check-audit">
+            <span><strong>Estado:</strong> ${escapeHtml(check.status_label || status)}</span>
+            <span><strong>Confianza:</strong> ${escapeHtml(check.confidence || "Media")}</span>
+          </div>
+        `;
 
         checksHtml += `
           <div class="check-card check-${status}">
             <div class="check-icon" aria-hidden="true">${iconMap[status]}</div>
             <div>
               <div class="check-title">${escapeHtml(check.title)}</div>
-              <div class="check-detail">${escapeHtml(check.detail)}</div>
+              ${auditHtml}
+              <div class="check-evidence"><strong>Evidencia:</strong> ${escapeHtml(check.evidence || check.detail || "Sin evidencia disponible.")}</div>
               ${recommendation}
             </div>
           </div>
