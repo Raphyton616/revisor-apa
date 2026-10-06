@@ -110,9 +110,21 @@ def parse_instructions(text: str | None) -> WorkInstructions:
 def check_custom_instructions(document, rules: WorkInstructions) -> list[dict]:
     if not rules.active:
         return []
-    from app.apa_logic import effective_line_spacing, length_cm, non_empty_paragraphs
+    from app.apa_logic import effective_line_spacing, find_reference_start, length_cm, non_empty_paragraphs
 
     checks = []
+    all_paragraphs = non_empty_paragraphs(document)
+    reference_start, _ = find_reference_start(all_paragraphs)
+    pre_references = all_paragraphs[:reference_start] if reference_start is not None else all_paragraphs
+    heading_names = {
+        "introducción", "introduccion", "desarrollo", "conclusión", "conclusion",
+        "resumen", "abstract", "método", "metodo", "resultados", "discusión", "discusion",
+    }
+    # Para formato, no contamos el título ni los encabezados; tampoco referencias.
+    paragraphs = [
+        paragraph for index, paragraph in enumerate(pre_references)
+        if index > 0 and paragraph.text.strip().casefold() not in heading_names
+    ]
     sections = document.sections
     if rules.margin_cm is not None and sections:
         section = sections[0]
@@ -120,7 +132,6 @@ def check_custom_instructions(document, rules: WorkInstructions) -> list[dict]:
         ok = all(value is not None and abs(value - rules.margin_cm) <= 0.1 for value in values)
         checks.append({"category": "Instrucciones", "title": "Márgenes del trabajo", "status": "ok" if ok else "error", "detail": f"Los márgenes coinciden con el requisito de {rules.margin_cm:g} cm." if ok else f"El requisito indica márgenes de {rules.margin_cm:g} cm.", "recommendation": "Ajusta los cuatro márgenes según las instrucciones del trabajo." if not ok else ""})
 
-    paragraphs = non_empty_paragraphs(document)
     if rules.font_name or rules.font_size:
         wrong = []
         for paragraph in paragraphs:
@@ -167,8 +178,8 @@ def check_custom_instructions(document, rules: WorkInstructions) -> list[dict]:
         checks.append({"category": "Instrucciones", "title": "Compatibilidad con APA 7", "status": "ok", "detail": "Las reglas específicas detectadas no contradicen las combinaciones APA 7 configuradas.", "recommendation": ""})
 
     if rules.required_sections:
-        text = " ".join(p.text.strip().lower() for p in paragraphs)
-        missing = [section for section in rules.required_sections if section.lower() not in text]
+        section_text = " ".join(p.text.strip().lower() for p in pre_references)
+        missing = [section for section in rules.required_sections if section.lower() not in section_text]
         checks.append({"category": "Instrucciones", "title": "Secciones requeridas", "status": "ok" if not missing else "warning", "detail": "Se encontraron todas las secciones requeridas." if not missing else "Faltan: " + ", ".join(missing) + ".", "recommendation": "Añade las secciones solicitadas por el docente." if missing else ""})
 
     if rules.notes:
