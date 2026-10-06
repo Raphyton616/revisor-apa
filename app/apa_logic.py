@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass
 from typing import Iterable
 
 from docx import Document
+from docx.table import Table
+from docx.text.paragraph import Paragraph
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -60,12 +62,15 @@ class Check:
 
 
 def iter_paragraphs(document: Document) -> Iterable:
-    for paragraph in document.paragraphs:
-        yield paragraph
-    for table in document.tables:
-        for row in table.rows:
-            for cell in row.cells:
-                yield from cell.paragraphs
+    """Recorre párrafos y celdas respetando el orden real del DOCX."""
+    for child in document.element.body.iterchildren():
+        if child.tag == qn("w:p"):
+            yield Paragraph(child, document)
+        elif child.tag == qn("w:tbl"):
+            table = Table(child, document)
+            for row in table.rows:
+                for cell in row.cells:
+                    yield from cell.paragraphs
 
 
 def non_empty_paragraphs(document: Document) -> list:
