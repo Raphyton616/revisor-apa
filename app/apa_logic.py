@@ -29,6 +29,14 @@ HEADING_WORDS = {
 }
 
 
+STATUS_LABELS = {
+    "ok": "Verificado",
+    "warning": "Revisión requerida",
+    "error": "Incumplimiento detectado",
+    "not_evaluable": "No evaluable",
+}
+
+
 @dataclass
 class Check:
     category: str
@@ -36,9 +44,19 @@ class Check:
     status: str
     detail: str
     recommendation: str = ""
+    confidence: str = ""
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        result = asdict(self)
+        result["status_label"] = STATUS_LABELS.get(self.status, "Revisión requerida")
+        result["evidence"] = self.detail
+        result["confidence"] = self.confidence or {
+            "ok": "Alta",
+            "error": "Alta",
+            "warning": "Media",
+            "not_evaluable": "Baja",
+        }.get(self.status, "Media")
+        return result
 
 
 def iter_paragraphs(document: Document) -> Iterable:
