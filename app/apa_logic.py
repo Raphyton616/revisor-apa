@@ -490,6 +490,95 @@ def _caption_number(text: str, kind: str) -> str:
     return match.group(1) if match else ""
 
 
+def _table_width_cm(table) -> float | None:
+    try:
+        tbl_w = table._tbl.tblPr.tblW
+        if tbl_w is not None and tbl_w.get(qn("w:w")):
+            return round(float(tbl_w.get(qn("w:w"))) * 2.54 / 1440, 2)
+    except (AttributeError, TypeError, ValueError):
+        pass
+    try:
+        widths = [length_cm(cell.width) for cell in table.rows[0].cells]
+        if widths and all(value is not None for value in widths):
+            return round(sum(widths), 2)
+    except (AttributeError, IndexError, TypeError, ValueError):
+        pass
+    return None
+
+
+def _physical_checks(document: Document) -> list[Check]:
+    """Comprueba dimensiones del DOCX; no sustituye una renderización PDF."""
+    checks = []
+    if not document.sections:
+        return [Check("Posición física", "Dimensiones de página", "not_evaluable",
+                      "No se pudo identificar la sección de página del documento.",
+                      "Revisa manualmente la distribución visual del documento.", "Baja")]
+
+    section = document.sections[0]
+    page_width = length_cm(section.page_width)
+    usable_width = None
+    if page_width is not None:
+        left = length_cm(section.left_margin) or 0
+        right = length_cm(section.right_margin) or 0
+        usable_width = round(page_width - left - right, 2)
+    checks.append(Check(
+        "Posición física", "Ancho útil de página", "ok" if usable_width and usable_width > 0 else "not_evaluable",
+        f"El ancho útil calculado es de {usable_width} cm, después de descontar los márgenes." if usable_width and usable_width > 0 else
+        "No se pudo calcular el ancho útil de la página.",
+        "", "Alta" if usable_width and usable_width > 0 else "Baja",
+    ))
+
+    tables = list(document.tables)
+    if tables and usable_width:
+        unknown = 0
+        oversized = []
+        for number, table in enumerate(tables, start=1):
+            width = _table_width_cm(table)
+            if width is None:
+                unknown += 1
+            elif width > usable_width + 0.2:
+                oversized.append(f"Tabla {number} ({width} cm frente a {usable_width} cm útiles)")
+        status = "warning" if oversized else ("not_evaluable" if unknown else "ok")
+        checks.append(Check(
+            "Posición física", "Ancho de tablas", status,
+            "; ".join(oversized) if oversized else
+            f"Las {len(tables)} tabla(s) no superan el ancho útil calculado." if not unknown else
+            f"No se pudo determinar el ancho de {unknown} tabla(s).",
+            "Reduce el ancho de la tabla o revisa la orientación de la página." if oversized else
+            "Confirma manualmente el ancho de las tablas." if unknown else "",
+            "Media" if status != "ok" else "Alta",
+        ))
+
+    figures = list(getattr(document, "inline_shapes", []))
+    if figures and usable_width:
+        unknown = 0
+        oversized = []
+        for number, figure in enumerate(figures, start=1):
+            width = length_cm(figure.width)
+            if width is None:
+                unknown += 1
+            elif width > usable_width + 0.2:
+                oversized.append(f"Figura {number} ({width} cm frente a {usable_width} cm útiles)")
+        status = "warning" if oversized else ("not_evaluable" if unknown else "ok")
+        checks.append(Check(
+            "Posición física", "Ancho de figuras", status,
+            "; ".join(oversized) if oversized else
+            f"Las {len(figures)} figura(s) no superan el ancho útil calculado." if not unknown else
+            f"No se pudo determinar el ancho de {unknown} figura(s).",
+            "Reduce el ancho de la figura o revisa la orientación de la página." if oversized else
+            "Confirma manualmente el ancho de las figuras." if unknown else "",
+            "Media" if status != "ok" else "Alta",
+        ))
+
+    checks.append(Check(
+        "Posición física", "Saltos y división entre páginas", "not_evaluable",
+        "El archivo DOCX no permite determinar con seguridad, sin renderizarlo, si una tabla o figura queda dividida entre páginas o separada de su rótulo.",
+        "Revisa la vista de impresión o exporta el documento a PDF para confirmar los saltos de página.",
+        "Baja",
+    ))
+    return checks
+
+
 def _visual_checks(document: Document, body: list) -> list[Check]:
     """Revisa tablas y figuras con señales estructurales, no con juicio visual absoluto."""
     tables = list(document.tables)
@@ -603,6 +692,7 @@ def analyze_document(data: bytes, filename: str = "", instructions_text: str = "
     checks = _check_format(document, body, paragraphs)
     checks.extend(_structure_checks(body, reference_start))
     checks.extend(_visual_checks(document, body))
+    checks.extend(_physical_checks(document))
     custom_rules = parse_instructions(instructions_text)
     custom_checks = check_custom_instructions(document, custom_rules)
     checks.extend(Check(**item) for item in custom_checks)
