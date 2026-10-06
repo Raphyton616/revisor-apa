@@ -110,7 +110,7 @@ def parse_instructions(text: str | None) -> WorkInstructions:
 def check_custom_instructions(document, rules: WorkInstructions) -> list[dict]:
     if not rules.active:
         return []
-    from app.apa_logic import length_cm, non_empty_paragraphs
+    from app.apa_logic import effective_line_spacing, length_cm, non_empty_paragraphs
 
     checks = []
     sections = document.sections
@@ -138,8 +138,33 @@ def check_custom_instructions(document, rules: WorkInstructions) -> list[dict]:
         checks.append({"category": "Instrucciones", "title": "Tipografía del trabajo", "status": "ok" if ok else "warning", "detail": f"La tipografía coincide con {expected}." if ok else f"El requisito específico indica {expected}.", "recommendation": "Aplica la fuente y tamaño indicados por el docente." if not ok else ""})
 
     if rules.line_spacing is not None:
-        bad = [p for p in paragraphs if p.paragraph_format.line_spacing is not None and (not isinstance(p.paragraph_format.line_spacing, (int, float)) or abs(float(p.paragraph_format.line_spacing) - rules.line_spacing) > 0.05)]
-        checks.append({"category": "Instrucciones", "title": "Interlineado del trabajo", "status": "ok" if not bad else "warning", "detail": f"El interlineado coincide con {rules.line_spacing:g}." if not bad else f"El requisito específico indica interlineado {rules.line_spacing:g}.", "recommendation": "Aplica el interlineado indicado por el docente." if bad else ""})
+        values = [effective_line_spacing(p)[0] for p in paragraphs]
+        unknown = sum(value is None for value in values)
+        bad = [value for value in values if value is not None and abs(value - rules.line_spacing) > 0.05]
+        if unknown and not bad:
+            detail = f"El requisito indica interlineado {rules.line_spacing:g}, pero no se pudo determinar en {unknown} párrafo(s)."
+            status = "warning"
+        elif bad:
+            detail = f"El requisito específico indica interlineado {rules.line_spacing:g}; hay {len(bad)} párrafo(s) con otro valor."
+            status = "warning"
+        else:
+            detail = f"El interlineado efectivo coincide con {rules.line_spacing:g}, incluso cuando proviene del estilo de Word."
+            status = "ok"
+        checks.append({"category": "Instrucciones", "title": "Interlineado del trabajo", "status": status, "detail": detail, "recommendation": "Aplica el interlineado indicado por el docente." if status != "ok" else ""})
+
+    conflicts = []
+    if rules.font_name and rules.font_size and (rules.font_name, rules.font_size) not in {("Times New Roman", 12.0), ("Arial", 11.0), ("Calibri", 11.0), ("Georgia", 11.0), ("Lucida Sans Unicode", 10.0)}:
+        conflicts.append(f"APA 7 no incluye {rules.font_name} {rules.font_size:g} pt entre las combinaciones estándar configuradas")
+    if rules.line_spacing is not None and abs(rules.line_spacing - 2.0) > 0.05:
+        conflicts.append(f"APA 7 recomienda interlineado doble y el trabajo exige {rules.line_spacing:g}")
+    if rules.margin_cm is not None and abs(rules.margin_cm - 2.54) > 0.1:
+        conflicts.append(f"APA 7 usa márgenes de 2,54 cm y el trabajo exige {rules.margin_cm:g} cm")
+    if rules.reference_heading and rules.reference_heading.casefold() != "referencias":
+        conflicts.append(f"APA 7 usa «Referencias» y el trabajo exige «{rules.reference_heading}»")
+    if conflicts:
+        checks.append({"category": "Instrucciones", "title": "Conflictos con APA 7", "status": "warning", "detail": "Se detectaron diferencias: " + "; ".join(conflicts) + ".", "recommendation": "Al corregir, se aplicarán las instrucciones específicas del docente; conserva esta diferencia como decisión académica."})
+    else:
+        checks.append({"category": "Instrucciones", "title": "Compatibilidad con APA 7", "status": "ok", "detail": "Las reglas específicas detectadas no contradicen las combinaciones APA 7 configuradas.", "recommendation": ""})
 
     if rules.required_sections:
         text = " ".join(p.text.strip().lower() for p in paragraphs)
