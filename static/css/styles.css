@@ -411,3 +411,60 @@ button:disabled {
     grid-template-columns: 1fr;
   }
              }
+
+.instructions-box {
+  margin: 0 0 20px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fbf3e4;
+}
+
+.instructions-box label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--gold-dark);
+  line-height: 1.4;
+}
+
+.instructions-box textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--ink);
+  background: #fffdf8;
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.instructions-box textarea:focus {
+  outline: 2px solid rgba(168, 117, 43, 0.3);
+  border-color: var(--gold);
+}
+
+.instructions-box small {
+  display: block;
+  margin-top: 8px;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
+.active-instructions {
+  margin-bottom: 24px;
+  padding: 15px 18px;
+  border: 1px solid #c9b17f;
+  border-left: 5px solid var(--gold);
+  border-radius: 9px;
+  color: var(--ink);
+  background: #fff3d1;
+  line-height: 1.5;
+}
+
+.active-instructions ul {
+  margin: 8px 0 0;
+  padding-left: 22px;
+}
