@@ -69,6 +69,22 @@ def effective_font(run) -> tuple[str, float]:
     return str(name), round(float(size), 1)
 
 
+def effective_line_spacing(paragraph) -> tuple[float | None, bool]:
+    """Obtiene el interlineado efectivo y si proviene de un estilo heredado."""
+    direct = paragraph.paragraph_format.line_spacing
+    if isinstance(direct, (int, float)):
+        return float(direct), False
+    style = paragraph.style
+    visited = set()
+    while style is not None and id(style) not in visited:
+        visited.add(id(style))
+        value = style.paragraph_format.line_spacing
+        if isinstance(value, (int, float)):
+            return float(value), True
+        style = style.base_style
+    return None, True
+
+
 def paragraph_font_samples(paragraphs: list) -> list[tuple[str, float]]:
     samples = []
     for paragraph in paragraphs:
@@ -264,16 +280,17 @@ def _check_format(document: Document, body: list, all_paragraphs: list) -> list[
     spacing_missing = 0
     spacing_bad = 0
     for paragraph in body:
-        value = paragraph.paragraph_format.line_spacing
+        value, inherited = effective_line_spacing(paragraph)
         if value is None:
             spacing_missing += 1
-        elif not isinstance(value, (int, float)) or abs(float(value) - 2.0) > 0.05:
+        elif abs(value - 2.0) > 0.05:
             spacing_bad += 1
     spacing_status = "warning" if spacing_bad or spacing_missing else "ok"
     checks.append(Check(
         "Formato", "Interlineado doble", spacing_status,
         "Hay párrafos con interlineado distinto de 2,0." if spacing_bad else
-        "El interlineado no está definido explícitamente en algunos párrafos; puede depender del estilo del documento." if spacing_missing else
+        "El interlineado no está definido ni en los párrafos ni en sus estilos." if spacing_missing else
+        "Los párrafos del cuerpo tienen interlineado doble (2,0), incluido el heredado desde los estilos." if any(effective_line_spacing(p)[1] for p in body) else
         "Los párrafos del cuerpo tienen interlineado doble (2,0).",
         "Aplica interlineado doble a todo el texto del documento." if spacing_status != "ok" else "",
     ))
