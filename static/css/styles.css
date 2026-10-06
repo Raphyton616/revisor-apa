@@ -486,3 +486,12 @@ button:disabled {
   font-size: 0.9rem;
   line-height: 1.55;
 }
+
+.check-not_evaluable {
+  border-left-color: var(--yellow);
+  background: var(--yellow-light);
+}
+
+.check-not_evaluable .check-icon {
+  background: var(--yellow);
+}
