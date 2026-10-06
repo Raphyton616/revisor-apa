@@ -95,8 +95,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const safeNumber = (value) => Number(value || 0).toLocaleString("es-ES");
     const checks = Array.isArray(data.checks) ? data.checks : [];
-    const categories = ["Formato", "Estructura", "Tablas y figuras", "Citas", "Referencias", "Instrucciones"];
-    const iconMap = { ok: "✓", warning: "!", error: "×" };
+    const categories = ["Formato", "Estructura", "Tablas y figuras", "Posición física", "Citas", "Referencias", "Instrucciones"];
+    const iconMap = { ok: "✓", warning: "!", error: "×", not_evaluable: "?" };
 
     const headerHtml = `
       <div class="results-header">
@@ -145,7 +145,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       checksHtml += `<section class="check-section"><h3>${escapeHtml(category)}</h3>`;
       categoryChecks.forEach((check) => {
-        const status = ["ok", "warning", "error"].includes(check.status)
+        const status = ["ok", "warning", "error", "not_evaluable"].includes(check.status)
           ? check.status
           : "warning";
         const recommendation = check.recommendation && status !== "ok"
