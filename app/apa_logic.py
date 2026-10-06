@@ -4,6 +4,11 @@ from __future__ import annotations
 
 import io
 import re
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from typing import Iterable
 
@@ -506,6 +511,105 @@ def _table_width_cm(table) -> float | None:
     return None
 
 
+def _pdf_physical_checks(data: bytes, filename: str) -> list[Check]:
+    """Renderiza el DOCX a PDF cuando LibreOffice está disponible y revisa páginas."""
+    converter = shutil.which("libreoffice") or shutil.which("soffice")
+    pdfinfo = shutil.which("pdfinfo")
+    pdftotext = shutil.which("pdftotext")
+    if not converter or not pdfinfo or not pdftotext:
+        return [Check(
+            "Posición física", "Vista PDF página por página", "not_evaluable",
+            "No están disponibles todas las herramientas necesarias para convertir el DOCX y revisar sus páginas.",
+            "Revisa manualmente la vista de impresión o exporta el documento a PDF.", "Baja",
+        )]
+
+    with tempfile.TemporaryDirectory(prefix="revisor-apa-pdf-") as temp_dir:
+        source = Path(temp_dir) / "documento.docx"
+        output_dir = Path(temp_dir) / "pdf"
+        profile_dir = Path(temp_dir) / "lo-profile"
+        output_dir.mkdir()
+        source.write_bytes(data)
+        try:
+            result = subprocess.run(
+                [converter, "--headless", f"-env:UserInstallation={profile_dir.as_uri()}",
+                 "--convert-to", "pdf", "--outdir", str(output_dir), str(source)],
+                capture_output=True, text=True, timeout=30, check=False,
+            )
+            pdf_path = output_dir / "documento.pdf"
+            if result.returncode != 0 or not pdf_path.exists():
+                raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "La conversión no produjo un PDF.")
+            info = subprocess.run([pdfinfo, str(pdf_path)], capture_output=True, text=True, timeout=10, check=False)
+            pages_match = re.search(r"^Pages:\s+(\d+)", info.stdout, re.MULTILINE)
+            pages = int(pages_match.group(1)) if pages_match else None
+            if not pages:
+                raise RuntimeError("No se pudo leer el número de páginas del PDF.")
+
+            text_path = Path(temp_dir) / "documento-bbox.xml"
+            bbox = subprocess.run(
+                [pdftotext, "-bbox-layout", str(pdf_path), str(text_path)],
+                capture_output=True, text=True, timeout=15, check=False,
+            )
+            captions = []
+            if text_path.exists():
+                try:
+                    root = ET.parse(text_path).getroot()
+                    for page_number, page in enumerate(root.findall(".//{*}page"), start=1):
+                        page_width = float(page.get("width", "0"))
+                        page_height = float(page.get("height", "0"))
+                        words = []
+                        for word in page.findall(".//{*}word"):
+                            text = "".join(word.itertext()).strip()
+                            if text:
+                                words.append((text, float(word.get("xMin", "0")), float(word.get("xMax", "0")), float(word.get("yMin", "0")), float(word.get("yMax", "0"))))
+                        joined = " ".join(w[0] for w in words)
+                        if re.search(r"\bTabla\s+\d+", joined, re.IGNORECASE):
+                            captions.append(("tabla", page_number, page_width, page_height, words))
+                        if re.search(r"\bFigura\s+\d+", joined, re.IGNORECASE):
+                            captions.append(("figura", page_number, page_width, page_height, words))
+                except (ET.ParseError, ValueError, OSError):
+                    captions = []
+
+            edge_issues = []
+            for kind, page_number, page_width, page_height, words in captions:
+                relevant = [w for w in words if re.fullmatch(r"(?:Tabla|Figura)", w[0], re.IGNORECASE) or re.fullmatch(r"\d+[.:]?", w[0])]
+                if relevant and page_width:
+                    left = min(w[1] for w in relevant)
+                    right = max(w[2] for w in relevant)
+                    if left < page_width * 0.08 or right > page_width * 0.92:
+                        edge_issues.append(f"{kind.capitalize()} en página {page_number} aparece cerca del borde lateral")
+
+            checks = [Check(
+                "Posición física", "Conversión a PDF", "ok",
+                f"El DOCX se convirtió correctamente a PDF y contiene {pages} página(s).",
+                "", "Alta",
+            )]
+            if captions:
+                checks.append(Check(
+                    "Posición física", "Rótulos visibles en PDF", "warning" if edge_issues else "ok",
+                    "; ".join(edge_issues) if edge_issues else f"Se localizaron rótulos de tabla o figura en {len(captions)} página(s) del PDF.",
+                    "Revisa la alineación y los márgenes de los rótulos señalados." if edge_issues else "",
+                    "Media" if edge_issues else "Alta",
+                ))
+            else:
+                checks.append(Check(
+                    "Posición física", "Rótulos visibles en PDF", "not_evaluable",
+                    "El PDF se generó, pero no se localizaron rótulos textuales de tabla o figura mediante extracción automática.",
+                    "Revisa visualmente las páginas que contienen tablas o figuras.", "Baja",
+                ))
+            checks.append(Check(
+                "Posición física", "División entre páginas", "not_evaluable",
+                "La conversión PDF fue exitosa, pero esta versión no afirma automáticamente si una tabla o figura quedó dividida entre páginas.",
+                "Revisa visualmente los saltos de página en la vista PDF.", "Baja",
+            ))
+            return checks
+        except (OSError, subprocess.SubprocessError, RuntimeError, ValueError):
+            return [Check(
+                "Posición física", "Vista PDF página por página", "not_evaluable",
+                "No fue posible convertir este DOCX a PDF en el tiempo disponible.",
+                "Revisa manualmente la vista de impresión o exporta el documento a PDF.", "Baja",
+            )]
+
+
 def _physical_checks(document: Document) -> list[Check]:
     """Comprueba dimensiones del DOCX; no sustituye una renderización PDF."""
     checks = []
@@ -693,6 +797,7 @@ def analyze_document(data: bytes, filename: str = "", instructions_text: str = "
     checks.extend(_structure_checks(body, reference_start))
     checks.extend(_visual_checks(document, body))
     checks.extend(_physical_checks(document))
+    checks.extend(_pdf_physical_checks(data, filename))
     custom_rules = parse_instructions(instructions_text)
     custom_checks = check_custom_instructions(document, custom_rules)
     checks.extend(Check(**item) for item in custom_checks)
