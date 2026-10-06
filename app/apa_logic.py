@@ -466,6 +466,25 @@ def _structure_checks(body: list, reference_start: int | None) -> list[Check]:
     return checks
 
 
+def _document_blocks(document: Document) -> list[tuple[str, object]]:
+    """Devuelve párrafos y tablas en el orden real del cuerpo de Word."""
+    blocks = []
+    body = document.element.body
+    paragraph_by_xml = {id(p._p): p for p in document.paragraphs}
+    table_by_xml = {id(t._tbl): t for t in document.tables}
+    for child in body.iterchildren():
+        if child.tag == qn("w:p") and id(child) in paragraph_by_xml:
+            blocks.append(("p", paragraph_by_xml[id(child)]))
+        elif child.tag == qn("w:tbl") and id(child) in table_by_xml:
+            blocks.append(("table", table_by_xml[id(child)]))
+    return blocks
+
+
+def _caption_number(text: str, kind: str) -> str:
+    match = re.match(rf"^\s*{kind}\s+(\d+)\s*[.:]", text, re.IGNORECASE)
+    return match.group(1) if match else ""
+
+
 def _visual_checks(document: Document, body: list) -> list[Check]:
     """Revisa tablas y figuras con señales estructurales, no con juicio visual absoluto."""
     tables = list(document.tables)
@@ -526,6 +545,44 @@ def _visual_checks(document: Document, body: list) -> list[Check]:
             "Menciona cada figura en el texto antes o después de presentarla." if not mentions else "",
             "Media" if not mentions else "Alta",
         ))
+    blocks = _document_blocks(document)
+    for kind, element_label in (("tabla", "tablas"), ("figura", "figuras")):
+        if kind == "tabla":
+            elements = [(i, block) for i, block in enumerate(blocks) if block[0] == "table"]
+        else:
+            elements = [(i, block) for i, block in enumerate(blocks) if block[0] == "p" and "w:drawing" in block[1]._p.xml]
+        if not elements:
+            continue
+
+        issues = []
+        for ordinal, (position, _) in enumerate(elements, start=1):
+            previous = blocks[position - 1][1].text.strip() if position > 0 and blocks[position - 1][0] == "p" else ""
+            following = blocks[position + 1][1].text.strip() if position + 1 < len(blocks) and blocks[position + 1][0] == "p" else ""
+            caption_above = _caption_number(previous, kind)
+            caption_below = _caption_number(following, kind)
+            label_number = caption_above or caption_below
+            if not label_number:
+                issues.append(f"{kind.capitalize()} {ordinal}: no tiene un rótulo numerado inmediatamente cercano")
+            elif caption_below and not caption_above:
+                if kind == "tabla":
+                    issues.append(f"Tabla {label_number}: el rótulo aparece debajo; en APA suele colocarse encima")
+            if label_number:
+                body_before = "\n".join(
+                    block[1].text for block in blocks[:position]
+                    if block[0] == "p" and not _caption_number(block[1].text, kind)
+                )
+                if not re.search(rf"\b{kind}\s+{label_number}\b", body_before, re.IGNORECASE):
+                    issues.append(f"{kind.capitalize()} {label_number}: no se detectó una mención anterior en el texto")
+
+        title = "Posición de tablas" if kind == "tabla" else "Posición de figuras"
+        checks.append(Check(
+            "Tablas y figuras", title, "warning" if issues else "ok",
+            "; ".join(issues) if issues else
+            f"La posición lógica de las {element_label} es coherente: hay rótulo cercano y mención previa en el texto.",
+            f"Revisa el orden: menciona cada {kind} antes de presentarla y coloca su rótulo en la posición APA correspondiente." if issues else "",
+            "Media" if issues else "Alta",
+        ))
+
     return checks
 
 
